@@ -27,6 +27,18 @@ updates:
     commit-message:
       prefix: chore
 
+  # The web front's npm packages (Nuxt and its tree).
+  - package-ecosystem: npm
+    directory: /web
+    target-branch: dev
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
   - package-ecosystem: docker-compose
     directory: /
     target-branch: dev

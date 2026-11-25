@@ -47,6 +47,18 @@ jobs:
           "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version
           echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg/ffmpeg" >> "$GITHUB_ENV"
 
+      # The web front (web/), which the API image serves: it must keep building.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the web front
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
       - run: dotnet restore ConvertApi.slnx
       - run: dotnet build ConvertApi.slnx --configuration Release --no-restore
       - run: dotnet format ConvertApi.slnx --verify-no-changes --no-restore

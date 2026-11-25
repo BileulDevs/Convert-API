@@ -2,6 +2,7 @@ using ConvertApi.Api.Auth;
 using ConvertApi.Api.Formats;
 using ConvertApi.Api.Jobs;
 using ConvertApi.Api.RateLimiting;
+using ConvertApi.Api.Web;
 using ConvertApi.Api.Webhooks;
 using ConvertApi.Data;
 using Scalar.AspNetCore;
@@ -22,6 +23,9 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+
+// Before authentication: the web front's files are public, the API calls they make are not.
+app.UseWebFront();
 app.UseAuthentication();
 app.UseAuthorization();
 

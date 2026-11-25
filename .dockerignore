@@ -10,3 +10,6 @@
 **/Dockerfile
 compose*.yaml
 tests/
+web/.nuxt/
+web/.output/
+web/dist/
