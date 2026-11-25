@@ -107,14 +107,35 @@ public sealed class FfmpegConverterTests : IDisposable
     {
         var input = await SampleAsync("mp4", seconds: 20);
         var request = new ConversionRequest(input, Output("webm"), "mp4", "webm");
+
+        // A copy under a name of its own: counting every "ffmpeg" process would also see the
+        // machine's other FFmpeg runs (a local worker, say) start and stop during the test.
+        var name = $"fft{Guid.NewGuid():N}"[..11];
+        var ownFfmpeg = Path.Combine(_directory, name + Path.GetExtension(ResolveFfmpeg()));
+        File.Copy(ResolveFfmpeg(), ownFfmpeg);
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(Ct);
         cancel.CancelAfter(TimeSpan.FromMilliseconds(300));
-        var running = Process.GetProcessesByName("ffmpeg").Length;
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => _converter.ConvertAsync(request, cancel.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => new FfmpegConverter(ownFfmpeg).ConvertAsync(request, cancel.Token));
 
-        await Task.Delay(500, Ct);
-        Assert.Equal(running, Process.GetProcessesByName("ffmpeg").Length);
+        Assert.Empty(Process.GetProcessesByName(name));
+    }
+
+    /// <summary>The FFmpeg executable's full path, looked up on the PATH when only a name is configured.</summary>
+    private static string ResolveFfmpeg()
+    {
+        if (File.Exists(Ffmpeg))
+        {
+            return Path.GetFullPath(Ffmpeg);
+        }
+
+        var fileName = OperatingSystem.IsWindows() ? Ffmpeg + ".exe" : Ffmpeg;
+        return (Environment.GetEnvironmentVariable("PATH") ?? "")
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => Path.Combine(directory, fileName))
+            .FirstOrDefault(File.Exists)
+            ?? throw new InvalidOperationException($"'{Ffmpeg}' was not found; set FFMPEG_PATH.");
     }
 
     [Fact]
