@@ -1,6 +1,7 @@
 # Every push: build (warnings are errors), formatting check, unit tests with coverage.
 # Pull requests to main: integration tests too, against real PostgreSQL containers (Testcontainers).
-# Pushes to main: the API and worker images are published to GitHub Container Registry.
+# Pushes to main: the API and worker images are published to GitHub Container Registry, then
+# deployed to test and, once approved, to prod (deploy.yml).
 name: CI
 
 on:
@@ -145,3 +146,29 @@ jobs:
       - name: Log out of the registry
         if: always()
         run: docker logout ghcr.io
+
+  # The commit's images go to test, then to prod once someone approves it there (the prod
+  # environment requires a reviewer). Both stop at their smoke test.
+  deploy-test:
+    name: Deploy to test
+    needs: images
+    # Off until Azure and the GitHub environments are set up (infra/setup.ps1 turns it on).
+    if: vars.DEPLOY_ENABLED == 'true'
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: test
+      sha: ${{ github.sha }}
+
+  deploy-prod:
+    name: Deploy to prod
+    needs: deploy-test
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      environment: prod
+      sha: ${{ github.sha }}
