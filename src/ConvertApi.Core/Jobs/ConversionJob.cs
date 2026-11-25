@@ -62,12 +62,20 @@ public sealed class ConversionJob
 
     public string? FailureReason { get; private set; }
 
+    /// <summary>Where the job's owner wants to be notified when it ends; always passes <see cref="CallbackUrl"/>'s checks.</summary>
+    public Uri? CallbackUrl { get; private set; }
+
     public IReadOnlyList<JobTransition> Transitions => _transitions.AsReadOnly();
 
     public bool IsTerminal => JobStateMachine.IsTerminal(Status);
 
     public static ConversionJob Create(
-        Guid ownerId, string sourceFileKey, string sourceFormat, string targetFormat, DateTimeOffset now)
+        Guid ownerId,
+        string sourceFileKey,
+        string sourceFormat,
+        string targetFormat,
+        DateTimeOffset now,
+        Uri? callbackUrl = null)
     {
         if (ownerId == Guid.Empty)
         {
@@ -75,6 +83,10 @@ public sealed class ConversionJob
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceFileKey);
+        if (callbackUrl is not null && !Webhooks.CallbackUrl.IsAllowed(callbackUrl))
+        {
+            throw new ArgumentException("A callback URL must be HTTPS to a public host.", nameof(callbackUrl));
+        }
 
         var utcNow = now.ToUniversalTime();
         return new ConversionJob(
@@ -83,7 +95,10 @@ public sealed class ConversionJob
             sourceFileKey,
             NormalizeFormat(sourceFormat, nameof(sourceFormat)),
             NormalizeFormat(targetFormat, nameof(targetFormat)),
-            utcNow);
+            utcNow)
+        {
+            CallbackUrl = callbackUrl,
+        };
     }
 
     /// <summary>A worker begins (or, after a crash, resumes) the conversion.</summary>

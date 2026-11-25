@@ -36,6 +36,24 @@ public sealed class ConversionJobTests
         Assert.Null(job.ExpiresAt);
         Assert.Null(job.FailureReason);
         Assert.Empty(job.Transitions);
+        Assert.Null(job.CallbackUrl);
+    }
+
+    [Fact]
+    public void Create_KeepsASafeCallbackUrl()
+    {
+        var callback = new Uri("https://example.com/hook");
+
+        var job = ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0, callback);
+
+        Assert.Equal(callback, job.CallbackUrl);
+    }
+
+    [Fact]
+    public void Create_RefusesAnUnsafeCallbackUrl()
+    {
+        Assert.Throws<ArgumentException>(
+            () => ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0, new Uri("https://10.0.0.1/hook")));
     }
 
     [Fact]

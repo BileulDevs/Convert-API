@@ -11,7 +11,8 @@ public sealed record JobResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? ExpiresAt,
-    string? FailureReason)
+    string? FailureReason,
+    Uri? CallbackUrl)
 {
     public static JobResponse From(ConversionJob job)
     {
@@ -24,6 +25,7 @@ public sealed record JobResponse(
             job.CreatedAt,
             job.CompletedAt,
             job.ExpiresAt,
-            job.FailureReason);
+            job.FailureReason,
+            job.CallbackUrl);
     }
 }

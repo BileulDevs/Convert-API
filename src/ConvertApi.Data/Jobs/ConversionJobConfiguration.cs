@@ -25,6 +25,7 @@ internal sealed class ConversionJobConfiguration : IEntityTypeConfiguration<Conv
         // Stored as text: reordering the enum can never reinterpret existing rows.
         job.Property(j => j.Status).HasConversion<string>().HasMaxLength(StatusLength);
         job.Property(j => j.FailureReason).HasMaxLength(2000);
+        job.Property(j => j.CallbackUrl).HasMaxLength(Core.Webhooks.CallbackUrl.MaxLength);
         job.Ignore(j => j.IsTerminal);
 
         // EF needs an IList: map the private list behind the read-only Transitions property.

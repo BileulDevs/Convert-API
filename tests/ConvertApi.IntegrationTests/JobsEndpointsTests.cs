@@ -33,6 +33,42 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     }
 
     [Fact]
+    public async Task PostJob_WithACallbackUrl_KeepsItOnTheJob()
+    {
+        using var client = factory.CreateClientWithKey();
+        using var form = Form(Png(size: 50), "photo.png", "jpg");
+        form.Add(new StringContent("https://example.com/hooks/convert?client=42"), "callbackUrl");
+
+        using var response = await client.PostAsync(JobsUri, form, Ct);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var job = await ReadJobAsync(response);
+        Assert.Equal("https://example.com/hooks/convert?client=42", job.GetProperty("callbackUrl").GetString());
+        using var fetched = await client.GetAsync(response.Headers.Location, Ct);
+        Assert.Equal(
+            "https://example.com/hooks/convert?client=42",
+            (await ReadJobAsync(fetched)).GetProperty("callbackUrl").GetString());
+    }
+
+    [Theory]
+    [InlineData("http://example.com/hook")]
+    [InlineData("https://169.254.169.254/latest/meta-data")]
+    [InlineData("https://localhost:5080/v1/jobs")]
+    public async Task PostJob_WithAnUnsafeCallbackUrl_Returns400AndKeepsNothing(string callbackUrl)
+    {
+        using var client = factory.CreateClientWithKey();
+        var storedBefore = factory.StoredFiles().Length;
+        using var form = Form(Png(size: 50), "photo.png", "jpg");
+        form.Add(new StringContent(callbackUrl), "callbackUrl");
+
+        using var response = await client.PostAsync(JobsUri, form, Ct);
+
+        var problem = await AssertProblemAsync(response, HttpStatusCode.BadRequest);
+        Assert.Contains("callbackUrl", problem.GetProperty("detail").GetString(), StringComparison.Ordinal);
+        Assert.Equal(storedBefore, factory.StoredFiles().Length);
+    }
+
+    [Fact]
     public async Task GetJob_ReturnsTheJobAtItsTrackingUrl()
     {
         using var client = factory.CreateClientWithKey();

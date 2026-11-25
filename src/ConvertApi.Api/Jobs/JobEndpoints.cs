@@ -284,7 +284,7 @@ public static class JobEndpoints
         }
 
         var job = ConversionJob.Create(
-            user.GetApiKeyId(), upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow());
+            user.GetApiKeyId(), upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow(), upload.CallbackUrl);
         try
         {
             await jobs.AddAsync(job, cancellationToken);
@@ -310,5 +310,6 @@ public static class JobEndpoints
     }
 
     /// <summary>Documents the multipart body for OpenAPI; the endpoint reads the stream itself.</summary>
-    internal sealed record CreateJobForm(IFormFile File, string TargetFormat);
+    /// <param name="CallbackUrl">Optional HTTPS URL of a public host, notified when the job ends.</param>
+    internal sealed record CreateJobForm(IFormFile File, string TargetFormat, Uri? CallbackUrl);
 }
