@@ -1,0 +1,11 @@
+@ConvertApi_HostAddress = http://localhost:5080
+
+GET {{ConvertApi_HostAddress}}/health/live
+
+###
+
+GET {{ConvertApi_HostAddress}}/health/ready
+
+###
+
+GET {{ConvertApi_HostAddress}}/openapi/v1.json

@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ConvertApi.Api/ConvertApi.Api.csproj" />
+    <Project Path="src/ConvertApi.AppHost/ConvertApi.AppHost.csproj" />
+    <Project Path="src/ConvertApi.ServiceDefaults/ConvertApi.ServiceDefaults.csproj" />
+    <Project Path="src/ConvertApi.Worker/ConvertApi.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ConvertApi.IntegrationTests/ConvertApi.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
