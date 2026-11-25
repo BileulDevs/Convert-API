@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Npgsql;
 
 namespace ConvertApi.Data;
 
@@ -19,10 +20,19 @@ public static class DataServices
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan HealthCheckTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// The services authenticate with a password, never Kerberos. Turning GSS encryption off
+    /// stops Npgsql from probing for the Kerberos library, which slim containers do not have.
+    /// </summary>
+    private static string? WithoutKerberos(string? connectionString) =>
+        string.IsNullOrWhiteSpace(connectionString)
+            ? connectionString
+            : new NpgsqlConnectionStringBuilder(connectionString) { GssEncryptionMode = GssEncryptionMode.Disable }.ConnectionString;
+
     public static TBuilder AddConvertApiData<TBuilder>(this TBuilder builder)
         where TBuilder : IHostApplicationBuilder
     {
-        var connectionString = builder.Configuration.GetConnectionString(ConnectionName);
+        var connectionString = WithoutKerberos(builder.Configuration.GetConnectionString(ConnectionName));
         builder.Services.AddDbContext<ConvertApiDbContext>(options => options.UseNpgsql(
             connectionString,
             // A few quick retries for transient failures; the defaults (6 retries, up to 30 s)

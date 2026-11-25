@@ -67,6 +67,7 @@ public sealed partial class JobProcessor(
         }
         catch (ConversionFailedException rejected)
         {
+            LogRejected(logger, job.Id, rejected.InnerException ?? rejected);
             job.Fail(rejected.Message, clock.GetUtcNow());
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -153,6 +154,9 @@ public sealed partial class JobProcessor(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Job {JobId} finished as {Status} {FailureReason}")]
     private static partial void LogFinished(ILogger logger, Guid jobId, JobStatus status, string? failureReason);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Job {JobId}: the converter refused the input")]
+    private static partial void LogRejected(ILogger logger, Guid jobId, Exception exception);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not remove files of job {JobId}")]
     private static partial void LogCleanupFailed(ILogger logger, Guid jobId, Exception exception);

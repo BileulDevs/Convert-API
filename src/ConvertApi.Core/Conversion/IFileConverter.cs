@@ -16,5 +16,20 @@ public interface IFileConverter
 /// <summary>Local files the worker prepared for one conversion; formats are canonical ids such as "png".</summary>
 public sealed record ConversionRequest(string InputPath, string OutputPath, string SourceFormat, string TargetFormat);
 
-/// <summary>The engine refused the input. The job fails with this message, which the client will read.</summary>
-public sealed class ConversionFailedException(string message) : Exception(message);
+/// <summary>
+/// The engine refused the input. The job fails with <see cref="Exception.Message"/>, which the
+/// client reads, so it must never carry engine internals; those go in the inner exception, which
+/// is only logged.
+/// </summary>
+public sealed class ConversionFailedException : Exception
+{
+    public ConversionFailedException(string message)
+        : base(message)
+    {
+    }
+
+    public ConversionFailedException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}

@@ -27,6 +27,11 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
 
     public GeneratedApiKey RevokedClient { get; } = ApiKeyCredential.Generate();
 
+    /// <summary>Owner id of client A's key, as stamped on the jobs it creates.</summary>
+    public Guid ClientAOwnerId { get; } = Guid.CreateVersion7();
+
+    public Guid ClientBOwnerId { get; } = Guid.CreateVersion7();
+
     public string StorageRoot { get; } = Path.Combine(Path.GetTempPath(), "convertapi-it", Guid.NewGuid().ToString("N"));
 
     public string[] StoredFiles() =>
@@ -51,9 +56,9 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
         builder.UseSetting("Database:MigrateOnStartup", "true");
         builder.UseSetting("Storage:Root", StorageRoot);
         builder.UseSetting("Uploads:MaxImageBytes", ImageLimitBytes.ToString(CultureInfo.InvariantCulture));
-        DeclareKey(builder, 1, ClientA, revoked: false);
-        DeclareKey(builder, 2, ClientB, revoked: false);
-        DeclareKey(builder, 3, RevokedClient, revoked: true);
+        DeclareKey(builder, 1, ClientA, ClientAOwnerId, revoked: false);
+        DeclareKey(builder, 2, ClientB, ClientBOwnerId, revoked: false);
+        DeclareKey(builder, 3, RevokedClient, Guid.CreateVersion7(), revoked: true);
 
         foreach (var (key, value) in _extraSettings)
         {
@@ -71,10 +76,10 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
     }
 
     // Index 0 is the development key from appsettings.Development.json.
-    private static void DeclareKey(IWebHostBuilder builder, int index, GeneratedApiKey key, bool revoked)
+    private static void DeclareKey(IWebHostBuilder builder, int index, GeneratedApiKey key, Guid ownerId, bool revoked)
     {
         var prefix = $"ApiKeys:Keys:{index}:";
-        builder.UseSetting(prefix + "Id", Guid.CreateVersion7().ToString());
+        builder.UseSetting(prefix + "Id", ownerId.ToString());
         builder.UseSetting(prefix + "KeyId", key.KeyId);
         builder.UseSetting(prefix + "Name", $"Test client {index}");
         builder.UseSetting(prefix + "SecretHash", key.SecretHash);

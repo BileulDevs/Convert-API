@@ -29,8 +29,78 @@ public static class JobEndpoints
             .WithName("GetJob")
             .WithSummary("Read the state of a job");
 
+        jobs.MapGet("/{id:guid}/result", DownloadResultAsync)
+            .WithName("GetJobResult")
+            .WithSummary("Download the converted file (supports Range requests)")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status410Gone);
+
         return app;
     }
+
+    private static async Task<Results<FileStreamHttpResult, ProblemHttpResult>> DownloadResultAsync(
+        Guid id,
+        ClaimsPrincipal user,
+        HttpResponse response,
+        IJobRepository jobs,
+        IFileStorage storage,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var job = await jobs.FindAsync(id, user.GetApiKeyId(), cancellationToken);
+        if (job is null)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Job not found");
+        }
+
+        if (job.Status != JobStatus.Succeeded)
+        {
+            return ResultUnavailable(job);
+        }
+
+        if (job.ExpiresAt <= clock.GetUtcNow())
+        {
+            return ResultGone();
+        }
+
+        Stream result;
+        try
+        {
+            result = await storage.OpenReadAsync(StorageKeys.ResultOf(job.Id), cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            return ResultGone();
+        }
+
+        // Always a download, never rendered: an HTML result must not run in the client's origin.
+        // Results are private to their key, so no shared cache may keep them.
+        response.Headers.XContentTypeOptions = "nosniff";
+        response.Headers.CacheControl = "private, no-store";
+        response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
+        return TypedResults.Stream(
+            result,
+            MediaTypes.Of(job.TargetFormat),
+            fileDownloadName: $"{job.Id}.{job.TargetFormat}",
+            enableRangeProcessing: true);
+    }
+
+    private static ProblemHttpResult ResultUnavailable(ConversionJob job) => job.Status switch
+    {
+        JobStatus.Expired => ResultGone(),
+        JobStatus.Failed => TypedResults.Problem(
+            statusCode: StatusCodes.Status409Conflict, title: "No result", detail: $"The job failed: {job.FailureReason}"),
+        JobStatus.Canceled => TypedResults.Problem(
+            statusCode: StatusCodes.Status409Conflict, title: "No result", detail: "The job was canceled."),
+        _ => TypedResults.Problem(
+            statusCode: StatusCodes.Status409Conflict, title: "Result not ready", detail: "The job has not finished yet."),
+    };
+
+    private static ProblemHttpResult ResultGone() => TypedResults.Problem(
+        statusCode: StatusCodes.Status410Gone,
+        title: "Result expired",
+        detail: "The result was deleted after its retention period.");
 
     private static async Task<Results<Accepted<JobResponse>, ProblemHttpResult>> CreateJobAsync(
         HttpRequest request,

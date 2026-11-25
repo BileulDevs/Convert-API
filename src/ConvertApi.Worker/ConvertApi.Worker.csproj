@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
   </ItemGroup>
 
   <ItemGroup>
