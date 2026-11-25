@@ -1,0 +1,106 @@
+# Every push: build (warnings are errors), formatting check, unit tests with coverage.
+# Pull requests to main: integration tests too, against real PostgreSQL containers (Testcontainers).
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # A newer push supersedes a branch's run, but every commit on main keeps its own result.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  # The FFmpeg the worker image ships, so tests convert with the very same build.
+  FFMPEG_IMAGE: mwader/static-ffmpeg:9.1@sha256:dd09509d8c2152bfa601c8c20e3dd166bde906d37951b9f7e8bbd922267f5ac9
+
+jobs:
+  build:
+    name: Build, format and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      # ffprobe sits next to ffmpeg: some tests use it to check the converted files.
+      - name: Get FFmpeg
+        run: |
+          mkdir -p "$RUNNER_TEMP/ffmpeg"
+          docker create --name ffmpeg "$FFMPEG_IMAGE" >/dev/null
+          docker cp ffmpeg:/ffmpeg "$RUNNER_TEMP/ffmpeg/ffmpeg"
+          docker cp ffmpeg:/ffprobe "$RUNNER_TEMP/ffmpeg/ffprobe"
+          docker rm ffmpeg >/dev/null
+          # Fail here rather than let the FFmpeg tests skip themselves for want of a binary.
+          "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version
+          echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg/ffmpeg" >> "$GITHUB_ENV"
+
+      - run: dotnet restore ConvertApi.slnx
+      - run: dotnet build ConvertApi.slnx --configuration Release --no-restore
+      - run: dotnet format ConvertApi.slnx --verify-no-changes --no-restore
+
+      - name: Unit tests
+        run: >
+          dotnet test --project tests/ConvertApi.UnitTests --configuration Release --no-build
+          --results-directory "$GITHUB_WORKSPACE/TestResults"
+          -- --coverage --coverage-output-format cobertura --coverage-output unit.cobertura.xml
+
+      - name: Coverage summary
+        if: always()
+        run: bash .github/scripts/coverage-summary.sh "Unit tests" TestResults/unit.cobertura.xml
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: unit-test-results
+          path: TestResults/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  integration:
+    name: Integration tests
+    if: github.event_name == 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - run: dotnet build tests/ConvertApi.IntegrationTests --configuration Release
+
+      - name: Integration tests
+        run: >
+          dotnet test --project tests/ConvertApi.IntegrationTests --configuration Release --no-build
+          --results-directory "$GITHUB_WORKSPACE/TestResults"
+          -- --coverage --coverage-output-format cobertura --coverage-output integration.cobertura.xml
+
+      - name: Coverage summary
+        if: always()
+        run: bash .github/scripts/coverage-summary.sh "Integration tests" TestResults/integration.cobertura.xml
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: integration-test-results
+          path: TestResults/
+          if-no-files-found: ignore
+          retention-days: 14
