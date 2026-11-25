@@ -1,3 +1,4 @@
+using ConvertApi.Api.Jobs;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -5,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
+builder.Services.AddConversionJobs();
 
 var app = builder.Build();
 
@@ -18,5 +20,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapDefaultEndpoints();
+app.MapJobEndpoints();
 
 app.Run();

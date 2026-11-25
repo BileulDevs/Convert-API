@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using ConvertApi.Core.Formats;
 
 namespace ConvertApi.Core.Jobs;
 
@@ -12,16 +12,15 @@ namespace ConvertApi.Core.Jobs;
 /// A duplicate queue message shows up as an <see cref="InvalidJobTransitionException"/>
 /// (for example Start on a succeeded job): consumers must acknowledge it, not retry it.
 /// </remarks>
-public sealed partial class ConversionJob
+public sealed class ConversionJob
 {
-    private const int MaxFormatLength = 16;
-
     private readonly List<JobTransition> _transitions = [];
 
-    private ConversionJob(Guid id, Guid ownerId, string sourceFormat, string targetFormat, DateTimeOffset createdAt)
+    private ConversionJob(Guid id, Guid ownerId, string sourceFileKey, string sourceFormat, string targetFormat, DateTimeOffset createdAt)
     {
         Id = id;
         OwnerId = ownerId;
+        SourceFileKey = sourceFileKey;
         SourceFormat = sourceFormat;
         TargetFormat = targetFormat;
         CreatedAt = createdAt;
@@ -32,6 +31,9 @@ public sealed partial class ConversionJob
 
     /// <summary>The API key that created the job; other keys must not see it.</summary>
     public Guid OwnerId { get; }
+
+    /// <summary>Storage key of the uploaded file.</summary>
+    public string SourceFileKey { get; }
 
     /// <summary>Lower-case format id without a leading dot, e.g. "mp4".</summary>
     public string SourceFormat { get; }
@@ -64,16 +66,20 @@ public sealed partial class ConversionJob
 
     public bool IsTerminal => JobStateMachine.IsTerminal(Status);
 
-    public static ConversionJob Create(Guid ownerId, string sourceFormat, string targetFormat, DateTimeOffset now)
+    public static ConversionJob Create(
+        Guid ownerId, string sourceFileKey, string sourceFormat, string targetFormat, DateTimeOffset now)
     {
         if (ownerId == Guid.Empty)
         {
             throw new ArgumentException("A job must belong to an API key.", nameof(ownerId));
         }
 
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceFileKey);
+
         return new ConversionJob(
             Guid.CreateVersion7(now),
             ownerId,
+            sourceFileKey,
             NormalizeFormat(sourceFormat, nameof(sourceFormat)),
             NormalizeFormat(targetFormat, nameof(targetFormat)),
             now);
@@ -135,21 +141,9 @@ public sealed partial class ConversionJob
     {
         ArgumentNullException.ThrowIfNull(format, paramName);
 
-        var normalized = format.Trim().ToLowerInvariant();
-        if (normalized.StartsWith('.'))
-        {
-            normalized = normalized[1..];
-        }
-
-        if (!FormatPattern().IsMatch(normalized))
-        {
-            throw new ArgumentException(
-                $"A format is 1 to {MaxFormatLength} letters or digits, optionally after one dot.", paramName);
-        }
-
-        return normalized;
+        return FormatId.TryNormalize(format, out var normalized)
+            ? normalized
+            : throw new ArgumentException(
+                $"A format is 1 to {FormatId.MaxLength} letters or digits, optionally after one dot.", paramName);
     }
-
-    [GeneratedRegex("^[a-z0-9]{1,16}$", RegexOptions.CultureInvariant)]
-    private static partial Regex FormatPattern();
 }

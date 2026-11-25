@@ -7,8 +7,9 @@ public sealed class ConversionJobTests
     private static readonly DateTimeOffset T0 = new(2026, 11, 25, 10, 0, 0, TimeSpan.Zero);
     private static readonly Guid Owner = Guid.Parse("7f9c2a51-3d4b-4e6f-8a1b-2c3d4e5f6a7b");
     private static readonly TimeSpan Retention = TimeSpan.FromHours(24);
+    private const string SourceKey = "uploads/0190f3b2c8a47c1e9d2b3a4f5e6d7c8b";
 
-    private static ConversionJob NewJob() => ConversionJob.Create(Owner, "mp4", "mp3", T0);
+    private static ConversionJob NewJob() => ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0);
 
     private static ConversionJob SucceededJob()
     {
@@ -27,6 +28,7 @@ public sealed class ConversionJobTests
         Assert.Equal(Owner, job.OwnerId);
         Assert.Equal("mp4", job.SourceFormat);
         Assert.Equal("mp3", job.TargetFormat);
+        Assert.Equal(SourceKey, job.SourceFileKey);
         Assert.Equal(T0, job.CreatedAt);
         Assert.Equal(0, job.Attempts);
         Assert.Null(job.StartedAt);
@@ -40,7 +42,7 @@ public sealed class ConversionJobTests
     public void Create_UsesAVersion7IdStampedWithTheCreationTime()
     {
         var job = NewJob();
-        var later = ConversionJob.Create(Owner, "mp4", "mp3", T0.AddMilliseconds(1));
+        var later = ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0.AddMilliseconds(1));
 
         Assert.Equal(7, job.Id.Version);
         Assert.True(job.Id.CompareTo(later.Id) < 0);
@@ -52,7 +54,7 @@ public sealed class ConversionJobTests
     [InlineData("  Mp4 ", "mp4")]
     public void Create_NormalizesFormats(string input, string expected)
     {
-        var job = ConversionJob.Create(Owner, input, "mp3", T0);
+        var job = ConversionJob.Create(Owner, SourceKey, input, "mp3", T0);
 
         Assert.Equal(expected, job.SourceFormat);
     }
@@ -60,7 +62,7 @@ public sealed class ConversionJobTests
     [Fact]
     public void Create_AllowsTheSameSourceAndTarget_ForReencodingOrResizing()
     {
-        var job = ConversionJob.Create(Owner, "png", "png", T0);
+        var job = ConversionJob.Create(Owner, SourceKey, "png", "png", T0);
 
         Assert.Equal(job.SourceFormat, job.TargetFormat);
     }
@@ -68,7 +70,15 @@ public sealed class ConversionJobTests
     [Fact]
     public void Create_RejectsAnEmptyOwner()
     {
-        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Guid.Empty, "mp4", "mp3", T0));
+        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Guid.Empty, SourceKey, "mp4", "mp3", T0));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_RejectsABlankSourceFileKey(string key)
+    {
+        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Owner, key, "mp4", "mp3", T0));
     }
 
     [Theory]
@@ -82,14 +92,14 @@ public sealed class ConversionJobTests
     [InlineData("abcdefghijklmnopq")]
     public void Create_RejectsAnInvalidFormat(string format)
     {
-        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Owner, format, "mp3", T0));
-        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Owner, "mp4", format, T0));
+        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Owner, SourceKey, format, "mp3", T0));
+        Assert.Throws<ArgumentException>(() => ConversionJob.Create(Owner, SourceKey, "mp4", format, T0));
     }
 
     [Fact]
     public void Create_AcceptsAFormatOfTheMaximumLength()
     {
-        var job = ConversionJob.Create(Owner, "abcdefghijklmnop", "mp3", T0);
+        var job = ConversionJob.Create(Owner, SourceKey, "abcdefghijklmnop", "mp3", T0);
 
         Assert.Equal(16, job.SourceFormat.Length);
     }
