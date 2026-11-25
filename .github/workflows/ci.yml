@@ -1,5 +1,6 @@
 # Every push: build (warnings are errors), formatting check, unit tests with coverage.
 # Pull requests to main: integration tests too, against real PostgreSQL containers (Testcontainers).
+# Pushes to main: the API and worker images are published to GitHub Container Registry.
 name: CI
 
 on:
@@ -101,3 +102,46 @@ jobs:
           path: TestResults/
           if-no-files-found: ignore
           retention-days: 14
+
+  images:
+    name: Publish images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    # One publication at a time, in push order, so latest never lands on an older commit.
+    concurrency:
+      group: images
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # linux/amd64 only: the platform Azure Container Apps runs.
+      # Tagged with the commit, to know exactly what runs where, and latest.
+      - name: Build and push
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          for app in api worker; do
+            project="src/ConvertApi.${app^}/Dockerfile"
+            image="$registry/convertapi-$app"
+            docker buildx build --platform linux/amd64 --push \
+              --file "$project" \
+              --tag "$image:$GITHUB_SHA" --tag "$image:latest" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              .
+            echo "Published $image:$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Log out of the registry
+        if: always()
+        run: docker logout ghcr.io
