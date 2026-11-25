@@ -43,6 +43,11 @@ internal sealed class ConversionJobConfiguration : IEntityTypeConfiguration<Conv
         // time and never tie, so a cursor neither skips nor repeats rows.
         job.HasIndex(j => new { j.OwnerId, j.Id });
 
+        // Workers claim among jobs that are waiting or running, oldest first.
+        job.HasIndex(j => j.Id)
+            .HasDatabaseName("IX_Jobs_Active")
+            .HasFilter($"\"Status\" IN ('{nameof(JobStatus.Queued)}', '{nameof(JobStatus.Processing)}')");
+
         // The expiry sweep only looks at results that are still kept.
         job.HasIndex(j => j.ExpiresAt).HasFilter($"\"Status\" = '{nameof(JobStatus.Succeeded)}'");
     }

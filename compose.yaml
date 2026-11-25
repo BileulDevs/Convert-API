@@ -32,11 +32,15 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__convertapi: Host=postgres;Database=convertapi;Username=convertapi;Password='${POSTGRES_PASSWORD:-convertapi-dev}'
+      Storage__Root: /files
+    volumes:
+      - files:/files
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  # Scale out with: docker compose up --scale worker=3
   worker:
     build:
       context: .
@@ -44,7 +48,18 @@ services:
     image: convertapi-worker
     environment:
       DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__convertapi: Host=postgres;Database=convertapi;Username=convertapi;Password='${POSTGRES_PASSWORD:-convertapi-dev}'
+      Storage__Root: /files
+    volumes:
+      - files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   postgres-data:
+  # Uploads and results, shared by the API and the workers.
+  files:

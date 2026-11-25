@@ -5,6 +5,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ConvertApi.Core\ConvertApi.Core.csproj" />
+    <ProjectReference Include="..\ConvertApi.Data\ConvertApi.Data.csproj" />
     <ProjectReference Include="..\ConvertApi.ServiceDefaults\ConvertApi.ServiceDefaults.csproj" />
   </ItemGroup>
 

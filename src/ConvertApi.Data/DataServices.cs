@@ -29,6 +29,11 @@ public static class DataServices
             // would hold an API request far too long.
             npgsql => npgsql.EnableRetryOnFailure(MaxRetries, MaxRetryDelay, errorCodesToAdd: null)));
         builder.Services.AddScoped<IJobRepository, EfJobRepository>();
+        builder.Services.AddScoped<IJobDispatcher, PostgresJobDispatcher>();
+        builder.Services.AddOptions<JobDispatchOptions>()
+            .BindConfiguration(JobDispatchOptions.SectionName)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         // Readiness fails while the database is unreachable, and fast: connection retries
         // would otherwise keep the probe waiting far longer than the host's probe timeout.

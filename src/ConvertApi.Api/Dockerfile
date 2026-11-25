@@ -22,6 +22,8 @@ RUN dotnet publish src/ConvertApi.Api/ConvertApi.Api.csproj \
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+# Shared file storage, owned by the non-root user so a volume mounted here is writable.
+RUN mkdir /files && chown $APP_UID /files
 USER $APP_UID
 EXPOSE 8080
 COPY --from=build /app .

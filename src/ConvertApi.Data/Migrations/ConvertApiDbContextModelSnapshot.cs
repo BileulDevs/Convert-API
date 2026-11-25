@@ -98,6 +98,10 @@ namespace ConvertApi.Data.Migrations
                     b.HasIndex("ExpiresAt")
                         .HasFilter("\"Status\" = 'Succeeded'");
 
+                    b.HasIndex("Id")
+                        .HasDatabaseName("IX_Jobs_Active")
+                        .HasFilter("\"Status\" IN ('Queued', 'Processing')");
+
                     b.HasIndex("OwnerId", "Id");
 
                     b.ToTable("Jobs", (string)null);

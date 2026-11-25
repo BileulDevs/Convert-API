@@ -6,10 +6,17 @@ namespace ConvertApi.Core.Storage;
 /// </summary>
 public interface IFileStorage
 {
-    /// <summary>Streams <paramref name="content"/> to a new file without buffering it in memory.</summary>
+    /// <summary>
+    /// Streams <paramref name="content"/> to storage without buffering it in memory. The file
+    /// appears (or replaces an existing one) in a single step, only once fully written.
+    /// </summary>
     /// <returns>The number of bytes written.</returns>
     /// <exception cref="FileTooLargeException">The content is longer than <paramref name="maxBytes"/>; nothing is kept.</exception>
     Task<long> SaveAsync(string key, Stream content, long maxBytes, CancellationToken cancellationToken);
+
+    /// <summary>Opens a stored file for reading; the caller disposes the stream.</summary>
+    /// <exception cref="FileNotFoundException">Nothing is stored under <paramref name="key"/>.</exception>
+    Task<Stream> OpenReadAsync(string key, CancellationToken cancellationToken);
 
     /// <summary>Deletes the file; does nothing when it does not exist.</summary>
     Task DeleteAsync(string key, CancellationToken cancellationToken);

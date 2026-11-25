@@ -4,12 +4,16 @@ var database = builder.AddPostgres("postgres")
     .WithDataVolume()
     .AddDatabase("convertapi");
 
-builder.AddDotnetProject("api", "../ConvertApi.Api/ConvertApi.Api.csproj")
+var api = builder.AddDotnetProject("api", "../ConvertApi.Api/ConvertApi.Api.csproj")
     .WithReference(database)
     .WaitFor(database)
     .WithHttpHealthCheck("/health/ready")
     .WithExternalHttpEndpoints();
 
-builder.AddDotnetProject("worker", "../ConvertApi.Worker/ConvertApi.Worker.csproj");
+// The API applies the migrations: the worker starts once the API is ready.
+// Both run on this machine and share the default storage folder.
+builder.AddDotnetProject("worker", "../ConvertApi.Worker/ConvertApi.Worker.csproj")
+    .WithReference(database)
+    .WaitFor(api);
 
 builder.Build().Run();

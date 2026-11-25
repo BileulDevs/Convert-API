@@ -12,7 +12,11 @@ namespace ConvertApi.IntegrationTests;
 /// </summary>
 public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    private readonly Dictionary<string, string> _extraSettings = [];
     private string _connectionString = "";
+
+    /// <summary>Adds a configuration value; call it before the first request or <see cref="WebApplicationFactory{T}.Services"/>.</summary>
+    public void ConfigureSetting(string key, string value) => _extraSettings[key] = value;
 
     public const long ImageLimitBytes = 1024;
     public const string ApiKeyHeader = "X-Api-Key";
@@ -45,11 +49,16 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
     {
         builder.UseSetting("ConnectionStrings:convertapi", _connectionString);
         builder.UseSetting("Database:MigrateOnStartup", "true");
-        builder.UseSetting("Uploads:StorageRoot", StorageRoot);
+        builder.UseSetting("Storage:Root", StorageRoot);
         builder.UseSetting("Uploads:MaxImageBytes", ImageLimitBytes.ToString(CultureInfo.InvariantCulture));
         DeclareKey(builder, 1, ClientA, revoked: false);
         DeclareKey(builder, 2, ClientB, revoked: false);
         DeclareKey(builder, 3, RevokedClient, revoked: true);
+
+        foreach (var (key, value) in _extraSettings)
+        {
+            builder.UseSetting(key, value);
+        }
     }
 
     protected override void Dispose(bool disposing)
