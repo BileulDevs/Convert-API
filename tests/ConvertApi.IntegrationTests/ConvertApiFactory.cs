@@ -6,11 +6,14 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace ConvertApi.IntegrationTests;
 
 /// <summary>
-/// Runs the API with its own storage directory, a small image limit and three test keys
-/// (two active clients and a revoked one), declared after the development key.
+/// Runs the API against its own PostgreSQL database, with its own storage directory,
+/// a small image limit and three test keys (two active clients and a revoked one),
+/// declared after the development key.
 /// </summary>
-public sealed class ConvertApiFactory : WebApplicationFactory<Program>
+public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    private string _connectionString = "";
+
     public const long ImageLimitBytes = 1024;
     public const string ApiKeyHeader = "X-Api-Key";
 
@@ -33,8 +36,15 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>
         return client;
     }
 
+    public async ValueTask InitializeAsync()
+    {
+        _connectionString = await PostgresContainer.NewDatabaseConnectionStringAsync();
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("ConnectionStrings:convertapi", _connectionString);
+        builder.UseSetting("Database:MigrateOnStartup", "true");
         builder.UseSetting("Uploads:StorageRoot", StorageRoot);
         builder.UseSetting("Uploads:MaxImageBytes", ImageLimitBytes.ToString(CultureInfo.InvariantCulture));
         DeclareKey(builder, 1, ClientA, revoked: false);

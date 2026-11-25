@@ -7,11 +7,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConvertApi.Api\ConvertApi.Api.csproj" />
+    <ProjectReference Include="..\..\src\ConvertApi.Data\ConvertApi.Data.csproj" />
   </ItemGroup>
 
   <ItemGroup>

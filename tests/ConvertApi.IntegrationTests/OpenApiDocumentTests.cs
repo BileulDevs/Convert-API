@@ -1,10 +1,9 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ConvertApi.IntegrationTests;
 
-public sealed class OpenApiDocumentTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class OpenApiDocumentTests(ConvertApiFactory factory)
+    : IClassFixture<ConvertApiFactory>
 {
     [Fact]
     public async Task OpenApiDocument_IsServedInDevelopment()

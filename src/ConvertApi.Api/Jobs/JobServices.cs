@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using ConvertApi.Api.Uploads;
-using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
 using Microsoft.Extensions.Options;
 
@@ -18,7 +17,6 @@ public static class JobServices
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IFileStorage>(provider =>
             new LocalFileStorage(provider.GetRequiredService<IOptions<UploadOptions>>().Value.StorageRoot));
-        services.AddSingleton<IJobRepository, InMemoryJobRepository>();
         services.AddScoped<JobUploadReader>();
 
         services.ConfigureHttpJsonOptions(json => json.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));

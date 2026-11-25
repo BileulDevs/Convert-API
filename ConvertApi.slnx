@@ -3,6 +3,7 @@
     <Project Path="src/ConvertApi.Api/ConvertApi.Api.csproj" />
     <Project Path="src/ConvertApi.AppHost/ConvertApi.AppHost.csproj" />
     <Project Path="src/ConvertApi.Core/ConvertApi.Core.csproj" />
+    <Project Path="src/ConvertApi.Data/ConvertApi.Data.csproj" />
     <Project Path="src/ConvertApi.ServiceDefaults/ConvertApi.ServiceDefaults.csproj" />
     <Project Path="src/ConvertApi.Worker/ConvertApi.Worker.csproj" />
   </Folder>

@@ -7,12 +7,14 @@ WORKDIR /src
 # Restore first, from project files only, so the layer is cached until a dependency changes.
 COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/ConvertApi.Core/ConvertApi.Core.csproj src/ConvertApi.Core/
+COPY src/ConvertApi.Data/ConvertApi.Data.csproj src/ConvertApi.Data/
 COPY src/ConvertApi.ServiceDefaults/ConvertApi.ServiceDefaults.csproj src/ConvertApi.ServiceDefaults/
 COPY src/ConvertApi.Api/ConvertApi.Api.csproj src/ConvertApi.Api/
 RUN dotnet restore src/ConvertApi.Api/ConvertApi.Api.csproj
 
 COPY .editorconfig ./
 COPY src/ConvertApi.Core/ src/ConvertApi.Core/
+COPY src/ConvertApi.Data/ src/ConvertApi.Data/
 COPY src/ConvertApi.ServiceDefaults/ src/ConvertApi.ServiceDefaults/
 COPY src/ConvertApi.Api/ src/ConvertApi.Api/
 RUN dotnet publish src/ConvertApi.Api/ConvertApi.Api.csproj \
