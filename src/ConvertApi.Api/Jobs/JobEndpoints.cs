@@ -6,11 +6,15 @@ using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ConvertApi.Api.Jobs;
 
 public static class JobEndpoints
 {
+    /// <summary>When a quota slot frees up depends on the conversions; this is a reasonable time to look again.</summary>
+    private const string QuotaRetryAfterSeconds = "30";
+
     public static IEndpointRouteBuilder MapJobEndpoints(this IEndpointRouteBuilder app)
     {
         var jobs = app.MapGroup("/v1/jobs")
@@ -178,13 +182,28 @@ public static class JobEndpoints
 
     private static async Task<Results<Accepted<JobResponse>, ProblemHttpResult>> CreateJobAsync(
         HttpRequest request,
+        HttpResponse response,
         ClaimsPrincipal user,
         JobUploadReader uploads,
         IJobRepository jobs,
         IFileStorage storage,
+        IOptions<RateLimitOptions> limits,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
+        // Checked before reading the upload, so a refused request costs no disk or bandwidth.
+        // shortcut: two uploads racing past the check can exceed the quota by one each; lock per key if that matters.
+        var maxActiveJobs = limits.Value.MaxActiveJobs;
+        if (await jobs.CountActiveAsync(user.GetApiKeyId(), cancellationToken) >= maxActiveJobs)
+        {
+            response.Headers.RetryAfter = QuotaRetryAfterSeconds;
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Too many active jobs",
+                detail: $"This API key already has {maxActiveJobs} jobs queued or running; wait for one to finish.",
+                type: "https://tools.ietf.org/html/rfc6585#section-4");
+        }
+
         JobUpload upload;
         try
         {

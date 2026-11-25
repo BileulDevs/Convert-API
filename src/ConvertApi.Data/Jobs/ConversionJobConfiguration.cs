@@ -43,7 +43,8 @@ internal sealed class ConversionJobConfiguration : IEntityTypeConfiguration<Conv
         // time and never tie, so a cursor neither skips nor repeats rows.
         job.HasIndex(j => new { j.OwnerId, j.Id });
 
-        // Workers claim among jobs that are waiting or running, oldest first.
+        // Workers claim among jobs that are waiting or running, oldest first. It also keeps the
+        // per-key quota count small: only active rows, however many finished jobs pile up.
         job.HasIndex(j => j.Id)
             .HasDatabaseName("IX_Jobs_Active")
             .HasFilter($"\"Status\" IN ('{nameof(JobStatus.Queued)}', '{nameof(JobStatus.Processing)}')");

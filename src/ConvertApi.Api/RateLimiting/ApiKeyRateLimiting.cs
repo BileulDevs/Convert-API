@@ -18,6 +18,10 @@ public sealed class RateLimitOptions
 
     [Range(typeof(TimeSpan), "00:00:01", "01:00:00")]
     public TimeSpan Window { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>How many queued or running jobs one key may have; past it, new uploads get a 429.</summary>
+    [Range(1, 10_000)]
+    public int MaxActiveJobs { get; set; } = 10;
 }
 
 /// <summary>
