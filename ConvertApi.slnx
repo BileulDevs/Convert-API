@@ -2,10 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/ConvertApi.Api/ConvertApi.Api.csproj" />
     <Project Path="src/ConvertApi.AppHost/ConvertApi.AppHost.csproj" />
+    <Project Path="src/ConvertApi.Core/ConvertApi.Core.csproj" />
     <Project Path="src/ConvertApi.ServiceDefaults/ConvertApi.ServiceDefaults.csproj" />
     <Project Path="src/ConvertApi.Worker/ConvertApi.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ConvertApi.IntegrationTests/ConvertApi.IntegrationTests.csproj" />
+    <Project Path="tests/ConvertApi.UnitTests/ConvertApi.UnitTests.csproj" />
   </Folder>
 </Solution>
