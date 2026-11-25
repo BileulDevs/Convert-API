@@ -18,6 +18,18 @@ public sealed class ConversionOptions
     [Range(typeof(TimeSpan), "00:00:00.100", "1.00:00:00")]
     public TimeSpan MaxDuration { get; set; } = TimeSpan.FromMinutes(10);
 
+    /// <summary>The FFmpeg executable: a full path, or a name found on the PATH.</summary>
+    [Required]
+    public string FfmpegPath { get; set; } = "ffmpeg";
+
+    /// <summary>Audio and video outputs stop at this length (2 h by default).</summary>
+    [Range(typeof(TimeSpan), "00:00:01", "1.00:00:00")]
+    public TimeSpan MaxMediaDuration { get; set; } = TimeSpan.FromHours(2);
+
+    /// <summary>Threads FFmpeg may use for one conversion.</summary>
+    [Range(1, 16)]
+    public int FfmpegThreads { get; set; } = 2;
+
     /// <summary>Largest result a conversion may produce.</summary>
     [Range(1, long.MaxValue)]
     public long MaxResultBytes { get; set; } = 2L * 1024 * 1024 * 1024;

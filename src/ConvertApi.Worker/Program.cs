@@ -20,6 +20,11 @@ builder.Services.AddScoped<JobProcessor>();
 
 // One registration per conversion engine.
 builder.Services.AddSingleton<IFileConverter, ImageConverter>();
+builder.Services.AddSingleton<IFileConverter>(provider =>
+{
+    var options = provider.GetRequiredService<IOptions<ConversionOptions>>().Value;
+    return new FfmpegConverter(options.FfmpegPath, options.FfmpegThreads, options.MaxMediaDuration, options.MaxResultBytes);
+});
 builder.Services.AddHostedService<ConversionWorker>();
 
 var host = builder.Build();
