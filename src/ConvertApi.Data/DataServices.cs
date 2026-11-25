@@ -37,7 +37,15 @@ public static class DataServices
             connectionString,
             // A few quick retries for transient failures; the defaults (6 retries, up to 30 s)
             // would hold an API request far too long.
-            npgsql => npgsql.EnableRetryOnFailure(MaxRetries, MaxRetryDelay, errorCodesToAdd: null)));
+            npgsql => npgsql
+                .EnableRetryOnFailure(MaxRetries, MaxRetryDelay, errorCodesToAdd: null)
+                // SQL commands only join a trace already under way (a request, a conversion): the
+                // workers' and senders' polling would otherwise start a new trace every second.
+                // That also leaves out the migrations at startup. Batches (multi-statement SaveChanges)
+                // have a filter of their own.
+                .ConfigureDataSource(dataSource => dataSource.ConfigureTracing(tracing => tracing
+                    .ConfigureCommandFilter(_ => System.Diagnostics.Activity.Current is not null)
+                    .ConfigureBatchFilter(_ => System.Diagnostics.Activity.Current is not null)))));
         builder.Services.AddScoped<IJobRepository, EfJobRepository>();
         builder.Services.AddScoped<IJobDispatcher, PostgresJobDispatcher>();
         builder.Services.AddOptions<JobDispatchOptions>()

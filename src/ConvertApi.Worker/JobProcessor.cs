@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ConvertApi.Core.Conversion;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
@@ -18,6 +19,7 @@ public sealed partial class JobProcessor(
     IEnumerable<IFileConverter> converters,
     IOptions<ConversionOptions> options,
     TimeProvider clock,
+    ConversionTelemetry telemetry,
     ILogger<JobProcessor> logger)
 {
     private readonly ConversionOptions _options = options.Value;
@@ -25,19 +27,47 @@ public sealed partial class JobProcessor(
     public async Task ProcessAsync(ConversionJob job, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(job);
+        using var activity = ConversionTelemetry.StartConversion(job);
+        try
+        {
+            await RunAsync(job, activity, cancellationToken);
+        }
+        catch (Exception exception) when (
+            activity is not null && !(exception is OperationCanceledException && cancellationToken.IsCancellationRequested))
+        {
+            // This attempt failed (the job stays Processing, or another worker took it over): show it in the trace.
+            activity.SetStatus(ActivityStatusCode.Error, exception.GetType().Name);
+            activity.AddException(exception);
+            throw;
+        }
+    }
 
+    private async Task RunAsync(ConversionJob job, Activity? activity, CancellationToken cancellationToken)
+    {
         // The dispatcher already failed a job that used all its attempts: only clean up.
         var canceled = false;
+        TimeSpan? processingTime = null;
         if (job.Status == JobStatus.Processing)
         {
             // Canceled during the conversion, or just as it ended (the save then finds the cancel).
+            var started = clock.GetTimestamp();
             canceled = await ConvertAsync(job, cancellationToken);
+            processingTime = clock.GetElapsedTime(started);
             if (!canceled)
             {
                 canceled = !await TrySaveAsync(job, cancellationToken);
             }
         }
 
+        // The outcome is saved: report it before the cleanup, which may still throw.
+        var status = canceled ? JobStatus.Canceled : job.Status;
+        activity?.SetTag(ConversionTelemetry.StatusTag, status.ToString());
+        if (status == JobStatus.Failed)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "The conversion failed.");
+        }
+
+        telemetry.JobFinished(job, status, processingTime);
         await CleanUpAsync(job, keepResult: !canceled && job.Status == JobStatus.Succeeded);
         if (canceled)
         {
@@ -126,6 +156,10 @@ public sealed partial class JobProcessor(
     /// <summary>Polls the job until <paramref name="conversion"/> ends, and cancels it if the owner canceled the job.</summary>
     private async Task CancelOnOwnerRequestAsync(Guid jobId, CancellationTokenSource conversion)
     {
+        // Outside the conversion's trace: a check every few seconds would bury it under identical SQL
+        // spans. The change stays in this method: an async method restores its caller's context.
+        Activity.Current = null;
+
         while (!conversion.IsCancellationRequested)
         {
             try

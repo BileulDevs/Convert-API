@@ -17,6 +17,8 @@ builder.Services.AddOptions<ConversionOptions>()
 builder.Services.AddSingleton<IValidateOptions<ConversionOptions>, ConversionOptionsValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<JobProcessor>();
+builder.Services.AddSingleton<ConversionTelemetry>();
+builder.Services.AddHostedService<QueueLengthSampler>();
 
 // One registration per conversion engine.
 builder.Services.AddSingleton<IFileConverter, ImageConverter>();

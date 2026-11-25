@@ -29,6 +29,11 @@ RUN dotnet publish src/ConvertApi.Worker/ConvertApi.Worker.csproj \
 # binary instead of Ubuntu's ffmpeg package and its hundreds of MB of shared libraries.
 FROM mwader/static-ffmpeg:9.1@sha256:dd09509d8c2152bfa601c8c20e3dd166bde906d37951b9f7e8bbd922267f5ac9 AS ffmpeg
 
+# Just the two binaries, for CI to test with the very build shipped here (never part of the image):
+# docker buildx build --target ffmpeg-binaries --output type=local,dest=<dir> -f src/ConvertApi.Worker/Dockerfile .
+FROM scratch AS ffmpeg-binaries
+COPY --from=ffmpeg /ffmpeg /ffprobe /
+
 # ServiceDefaults references ASP.NET Core (health checks), so the worker needs the aspnet runtime too.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 

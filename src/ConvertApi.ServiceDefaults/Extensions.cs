@@ -49,9 +49,12 @@ public static class Extensions
             .WithMetrics(metrics => metrics
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
-                .AddRuntimeInstrumentation())
+                .AddRuntimeInstrumentation()
+                // The application's own business metrics, and Npgsql's connection pool metrics.
+                .AddMeter(builder.Environment.ApplicationName, "Npgsql"))
             .WithTracing(tracing => tracing
-                .AddSource(builder.Environment.ApplicationName)
+                // Npgsql traces every SQL command, so a job's trace shows its database work too.
+                .AddSource(builder.Environment.ApplicationName, "Npgsql")
                 .AddAspNetCoreInstrumentation(options =>
                     // Probes would flood the traces without telling anything useful.
                     options.Filter = context =>

@@ -65,6 +65,15 @@ public sealed class ConversionJob
     /// <summary>Where the job's owner wants to be notified when it ends; always passes <see cref="CallbackUrl"/>'s checks.</summary>
     public Uri? CallbackUrl { get; private set; }
 
+    /// <summary>Longest W3C traceparent kept; today's format is 55 characters.</summary>
+    public const int MaxTraceParentLength = 128;
+
+    /// <summary>
+    /// The W3C traceparent of the request that created the job. The worker starts its own trace from
+    /// it, so one trace follows a job from the upload to the conversion, however long it waited.
+    /// </summary>
+    public string? TraceParent { get; private set; }
+
     /// <summary>
     /// When the callback should next be called: set when a job with a callback ends, pushed back
     /// while a delivery is in flight or waiting for a retry, cleared once delivered or given up.
@@ -84,7 +93,8 @@ public sealed class ConversionJob
         string sourceFormat,
         string targetFormat,
         DateTimeOffset now,
-        Uri? callbackUrl = null)
+        Uri? callbackUrl = null,
+        string? traceParent = null)
     {
         if (ownerId == Guid.Empty)
         {
@@ -107,6 +117,9 @@ public sealed class ConversionJob
             utcNow)
         {
             CallbackUrl = callbackUrl,
+
+            // Diagnostics only: an unexpected value is dropped rather than failing the upload.
+            TraceParent = traceParent is { Length: <= MaxTraceParentLength } ? traceParent : null,
         };
     }
 

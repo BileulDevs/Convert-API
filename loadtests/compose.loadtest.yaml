@@ -1,0 +1,9 @@
+# Overrides compose.yaml for the load tests (loadtests/run.ps1): port 5081, and limits raised so
+# the measure is the service's capacity, not its protection against a single noisy client.
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:5081:8080"
+    environment:
+      RateLimit__PermitLimit: "100000"
+      RateLimit__MaxActiveJobs: "10000"

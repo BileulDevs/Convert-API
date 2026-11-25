@@ -1,0 +1,94 @@
+# Deploys one environment from the images of one commit, then smoke-tests it.
+# Called by the CI workflow; see docs/deploy.md for the Azure and GitHub setup it relies on.
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment to deploy (test or prod); holds the Azure ids and secrets.
+        required: true
+        type: string
+      sha:
+        description: Commit whose images to deploy.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  # Exchanged for an Azure token: no Azure secret is stored in GitHub (OIDC federation).
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.api-url }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      ENVIRONMENT_NAME: ${{ inputs.environment }}
+      SHA: ${{ inputs.sha }}
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.sha }}
+
+      # The Azure CLI on the runner signs in with GitHub's OIDC token; no third-party action needed.
+      - name: Sign in to Azure
+        run: |
+          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -er .value)
+          echo "::add-mask::$token"
+          az login --service-principal --username "$AZURE_CLIENT_ID" --tenant "$AZURE_TENANT_ID" \
+            --federated-token "$token" --output none
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+      - name: Deploy the infrastructure and the apps
+        id: deploy
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          API_KEYS: ${{ secrets.API_KEYS }}
+          WEBHOOK_SECRETS: ${{ secrets.WEBHOOK_SECRETS }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          export API_IMAGE="ghcr.io/$owner/convertapi-api:$SHA"
+          export WORKER_IMAGE="ghcr.io/$owner/convertapi-worker:$SHA"
+          # A first deployment can be refused while new Key Vault roles propagate: that error, and
+          # only that one, gets a second attempt.
+          for attempt in 1 2; do
+            if url=$(az deployment group create \
+                --resource-group "$AZURE_RESOURCE_GROUP" \
+                --name "convertapi-$SHA" \
+                --parameters "infra/$ENVIRONMENT_NAME.bicepparam" \
+                --query properties.outputs.apiUrl.value --output tsv 2> "$RUNNER_TEMP/deploy.err"); then
+              echo "api-url=$url" >> "$GITHUB_OUTPUT"
+              echo "Deployed $SHA to $ENVIRONMENT_NAME: $url" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            cat "$RUNNER_TEMP/deploy.err" >&2
+            if [[ $attempt == 2 ]] || ! grep -qE 'AuthorizationFailed|PrincipalNotFound|Forbidden' "$RUNNER_TEMP/deploy.err"; then
+              exit 1
+            fi
+            echo "Waiting for the new role assignments to apply before trying again"
+            sleep 120
+          done
+
+      - name: Smoke test
+        env:
+          SMOKE_API_KEY: ${{ secrets.SMOKE_API_KEY }}
+          API_URL: ${{ steps.deploy.outputs.api-url }}
+        run: bash .github/scripts/smoke-test.sh "$API_URL" "$SMOKE_API_KEY"
+
+      - name: Sign out of Azure
+        if: always()
+        run: az logout || true
