@@ -28,7 +28,7 @@ RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 WORKDIR /app
 # Shared file storage, owned by the non-root user so a volume mounted here is writable.
 RUN mkdir /files && chown $APP_UID /files
