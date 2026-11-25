@@ -2,6 +2,7 @@ using ConvertApi.Core.Conversion;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
 using ConvertApi.Worker;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -166,6 +167,63 @@ public sealed class JobProcessorTests : IDisposable
         Assert.False(await ExistsAsync(job.SourceFileKey));
     }
 
+    [Fact]
+    public async Task AJobCanceledByItsOwnerMidConversion_StopsTheConverterAndLeavesNoFiles()
+    {
+        var job = await ClaimedJobAsync();
+        _options.CancellationCheckInterval = TimeSpan.FromMilliseconds(50);
+        _dispatcher.Canceled = true;
+        var converter = new FakeConverter(output: [0], delay: TimeSpan.FromMinutes(5));
+
+        var processing = ProcessorWith(converter).ProcessAsync(job, Ct);
+
+        await processing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Empty(_dispatcher.Saved);
+        Assert.False(await ExistsAsync(job.SourceFileKey));
+        Assert.False(await ExistsAsync(StorageKeys.ResultOf(job.Id)));
+    }
+
+    [Fact]
+    public async Task AFailedCancelCheck_IsRetried_SoALaterCancelStillStopsTheConversion()
+    {
+        var job = await ClaimedJobAsync();
+        _options.CancellationCheckInterval = TimeSpan.FromMilliseconds(50);
+        _dispatcher.Canceled = true;
+        _dispatcher.FailingCancelChecks = 2;
+        var converter = new FakeConverter(output: [0], delay: TimeSpan.FromMinutes(5));
+
+        await ProcessorWith(converter).ProcessAsync(job, Ct).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        Assert.Empty(_dispatcher.Saved);
+        Assert.False(await ExistsAsync(job.SourceFileKey));
+    }
+
+    [Fact]
+    public async Task AJobCanceledJustAsItSucceeded_DropsItsResult()
+    {
+        var job = await ClaimedJobAsync();
+        _dispatcher.Canceled = true;
+        _dispatcher.SaveFailure = new DbUpdateConcurrencyException("The row changed.");
+
+        await ProcessorWith(new FakeConverter(output: [9])).ProcessAsync(job, Ct);
+
+        Assert.False(await ExistsAsync(job.SourceFileKey));
+        Assert.False(await ExistsAsync(StorageKeys.ResultOf(job.Id)));
+    }
+
+    [Fact]
+    public async Task AJobTakenOverByAnotherWorker_LeavesTheFilesToThatWorker()
+    {
+        var job = await ClaimedJobAsync();
+        _dispatcher.SaveFailure = new DbUpdateConcurrencyException("The row changed.");
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(
+            () => ProcessorWith(new FakeConverter(output: [9])).ProcessAsync(job, Ct));
+
+        Assert.True(await ExistsAsync(job.SourceFileKey));
+        Assert.True(await ExistsAsync(StorageKeys.ResultOf(job.Id)));
+    }
+
     private JobProcessor ProcessorWith(params IFileConverter[] converters) =>
         new(_storage, _dispatcher, converters, Options.Create(_options), new FixedClock(T0), NullLogger<JobProcessor>.Instance);
 
@@ -209,14 +267,33 @@ public sealed class JobProcessorTests : IDisposable
     {
         public List<ConversionJob> Saved { get; } = [];
 
+        /// <summary>What <see cref="IsCanceledAsync"/> answers: the owner canceled the job.</summary>
+        public bool Canceled { get; set; }
+
+        /// <summary>Thrown by <see cref="SaveAsync"/>, as when the row changed since the claim.</summary>
+        public Exception? SaveFailure { get; set; }
+
         public Task<ConversionJob?> ClaimNextAsync(DateTimeOffset now, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task SaveAsync(ConversionJob job, CancellationToken cancellationToken)
         {
+            if (SaveFailure is not null)
+            {
+                throw SaveFailure;
+            }
+
             Saved.Add(job);
             return Task.CompletedTask;
         }
+
+        /// <summary>How many <see cref="IsCanceledAsync"/> calls fail first, as when the database blips.</summary>
+        public int FailingCancelChecks { get; set; }
+
+        public Task<bool> IsCanceledAsync(Guid jobId, CancellationToken cancellationToken) =>
+            FailingCancelChecks-- > 0
+                ? throw new TimeoutException("The database did not answer.")
+                : Task.FromResult(Canceled);
 
         public Task ReleaseAsync(Guid jobId, DateTimeOffset now, CancellationToken cancellationToken) =>
             throw new NotSupportedException();

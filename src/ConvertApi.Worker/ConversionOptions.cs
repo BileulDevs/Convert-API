@@ -22,6 +22,10 @@ public sealed class ConversionOptions
     [Range(typeof(TimeSpan), "00:00:00.100", "1.00:00:00")]
     public TimeSpan MaxDuration { get; set; } = TimeSpan.FromMinutes(10);
 
+    /// <summary>How often a running conversion checks whether its owner canceled the job.</summary>
+    [Range(typeof(TimeSpan), "00:00:00.010", "00:01:00")]
+    public TimeSpan CancellationCheckInterval { get; set; } = TimeSpan.FromSeconds(2);
+
     /// <summary>The FFmpeg executable: a full path, or a name found on the PATH.</summary>
     [Required]
     public string FfmpegPath { get; set; } = "ffmpeg";

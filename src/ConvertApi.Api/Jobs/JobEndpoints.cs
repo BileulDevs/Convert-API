@@ -4,6 +4,7 @@ using ConvertApi.Api.Uploads;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
 
 namespace ConvertApi.Api.Jobs;
 
@@ -36,7 +37,77 @@ public static class JobEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
 
+        jobs.MapDelete("/{id:guid}", DeleteJobAsync)
+            .WithName("DeleteJob")
+            .WithSummary("Cancel a job that has not finished, or delete its result")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         return app;
+    }
+
+    /// <summary>
+    /// A queued or running job is canceled (its worker notices and stops); a succeeded job has its
+    /// result deleted and expires. A finished job is left as it is, so a repeated call still answers 204.
+    /// </summary>
+    private static async Task<Results<NoContent, ProblemHttpResult>> DeleteJobAsync(
+        Guid id,
+        ClaimsPrincipal user,
+        IJobRepository jobs,
+        IFileStorage storage,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var job = await jobs.FindAsync(id, user.GetApiKeyId(), cancellationToken);
+        if (job is null)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Job not found");
+        }
+
+        if (job.IsTerminal)
+        {
+            return TypedResults.NoContent();
+        }
+
+        var resultKey = StorageKeys.ResultOf(job.Id);
+        if (job.Status == JobStatus.Succeeded)
+        {
+            // File first: the sweep only looks at succeeded jobs, so an expired job must not keep a file.
+            await storage.DeleteAsync(resultKey, cancellationToken);
+            job.Expire(clock.GetUtcNow());
+            return await TrySaveAsync(job, jobs, cancellationToken);
+        }
+
+        // Cancel first: a worker must not see its source vanish and fail the job before the cancel lands.
+        job.Cancel(clock.GetUtcNow());
+        var saved = await TrySaveAsync(job, jobs, cancellationToken);
+        if (saved.Result is NoContent)
+        {
+            // A running worker may still write a result after this; it deletes it once it sees the cancel.
+            // shortcut: a failure here leaves the upload behind for good; add an orphan sweep if it shows up in logs.
+            await storage.DeleteAsync(job.SourceFileKey, cancellationToken);
+            await storage.DeleteAsync(resultKey, cancellationToken);
+        }
+
+        return saved;
+    }
+
+    private static async Task<Results<NoContent, ProblemHttpResult>> TrySaveAsync(
+        ConversionJob job, IJobRepository jobs, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await jobs.SaveAsync(job, cancellationToken);
+            return TypedResults.NoContent();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A worker claimed or finished the job in the meantime: its new state decides what a retry does.
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Job changed",
+                detail: "The job changed while it was being deleted; send the request again.");
+        }
     }
 
     private static async Task<Results<FileStreamHttpResult, ProblemHttpResult>> DownloadResultAsync(

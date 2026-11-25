@@ -44,6 +44,10 @@ internal sealed class PostgresJobDispatcher(ConvertApiDbContext db, IOptions<Job
                 cancellationToken);
     }
 
+    public Task<bool> IsCanceledAsync(Guid jobId, CancellationToken cancellationToken) =>
+        // A query, not the tracked entity: the worker's copy does not see the owner's change.
+        db.Jobs.AnyAsync(job => job.Id == jobId && job.Status == JobStatus.Canceled, cancellationToken);
+
     private async Task<ConversionJob?> ClaimInTransactionAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         db.ChangeTracker.Clear();
