@@ -26,6 +26,8 @@ builder.Services.AddSingleton<IFileConverter>(provider =>
     return new FfmpegConverter(options.FfmpegPath, options.FfmpegThreads, options.MaxMediaDuration, options.MaxResultBytes);
 });
 builder.Services.AddHostedService<ConversionWorker>();
+builder.Services.AddScoped<ResultSweeper>();
+builder.Services.AddHostedService<ResultSweepWorker>();
 
 var host = builder.Build();
 

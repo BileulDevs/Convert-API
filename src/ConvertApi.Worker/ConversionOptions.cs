@@ -11,6 +11,10 @@ public sealed class ConversionOptions
     [Range(typeof(TimeSpan), "00:01:00", "30.00:00:00")]
     public TimeSpan ResultRetention { get; set; } = TimeSpan.FromHours(24);
 
+    /// <summary>How often expired results are looked for and deleted.</summary>
+    [Range(typeof(TimeSpan), "00:00:01", "01:00:00")]
+    public TimeSpan ResultSweepInterval { get; set; } = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// A conversion running longer is stopped and the job fails. Must be shorter than the
     /// dispatcher's lease, so a working worker never has its job taken over.

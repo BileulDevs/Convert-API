@@ -24,6 +24,29 @@ internal sealed class EfJobRepository(ConvertApiDbContext db) : IJobRepository
     public Task<ConversionJob?> FindAsync(Guid id, Guid ownerId, CancellationToken cancellationToken) =>
         db.Jobs.FirstOrDefaultAsync(job => job.Id == id && job.OwnerId == ownerId, cancellationToken);
 
+    public async Task<IReadOnlyList<ConversionJob>> ListExpiredAsync(
+        DateTimeOffset now, int limit, CancellationToken cancellationToken)
+    {
+        var utcNow = now.ToUniversalTime();
+
+        // Matches the partial index on ExpiresAt, which only holds succeeded jobs.
+        return await db.Jobs
+            .Where(job => job.Status == JobStatus.Succeeded && job.ExpiresAt <= utcNow)
+            .OrderBy(job => job.ExpiresAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveAsync(ConversionJob job, CancellationToken cancellationToken)
+    {
+        if (db.Entry(job).State == EntityState.Detached)
+        {
+            throw new InvalidOperationException("Only a job loaded through this repository can be saved.");
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private static bool IsDuplicateKey(DbUpdateException exception) =>
         exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 }
