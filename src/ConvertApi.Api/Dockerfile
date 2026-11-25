@@ -1,7 +1,7 @@
 # Build context: repository root (needs global.json and Directory.*.props).
 # docker build -f src/ConvertApi.Api/Dockerfile -t convertapi-api .
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Restore first, from project files only, so the layer is cached until a dependency changes.
