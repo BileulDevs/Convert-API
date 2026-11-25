@@ -1,0 +1,10 @@
+# GitGuardian secret scanning settings.
+version: 2
+
+secret:
+  ignored_matches:
+    # The id of Azure's built-in "Key Vault Secrets User" role: the same in every tenant and
+    # published in Microsoft's documentation, it grants nothing by itself. infra/main.bicep and
+    # infra/setup.ps1 need it to assign that role.
+    - name: Azure built-in role id, Key Vault Secrets User (public, not a secret)
+      match: 4633458b-17de-408a-b874-0445c86b69e6
