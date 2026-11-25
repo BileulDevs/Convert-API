@@ -2,9 +2,12 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\ConvertApi.Core\ConvertApi.Core.csproj" />
+    <ProjectReference Include="..\ConvertApi.Data\ConvertApi.Data.csproj" />
     <ProjectReference Include="..\ConvertApi.ServiceDefaults\ConvertApi.ServiceDefaults.csproj" />
   </ItemGroup>
 

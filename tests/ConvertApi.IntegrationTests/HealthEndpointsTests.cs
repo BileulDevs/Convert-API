@@ -1,10 +1,9 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace ConvertApi.IntegrationTests;
 
-public sealed class HealthEndpointsTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class HealthEndpointsTests(ConvertApiFactory factory)
+    : IClassFixture<ConvertApiFactory>
 {
     [Theory]
     [InlineData("/health/live")]

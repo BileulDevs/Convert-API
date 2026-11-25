@@ -2,10 +2,26 @@
 # API and Scalar docs: http://localhost:5080/scalar
 # Development API key (X-Api-Key header): cvt_devlocal_DevelopmentOnlyKeyDoNotUseInProd
 # The API listens on 127.0.0.1 only: that key is public, so keep it off the network.
+# PostgreSQL is not published at all; its password comes from POSTGRES_PASSWORD (or a dev default).
 
 name: convertapi
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: convertapi
+      POSTGRES_USER: convertapi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-convertapi-dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U convertapi -d convertapi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -15,8 +31,16 @@ services:
       - "127.0.0.1:5080:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__convertapi: Host=postgres;Database=convertapi;Username=convertapi;Password='${POSTGRES_PASSWORD:-convertapi-dev}'
+      Storage__Root: /files
+    volumes:
+      - files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
+  # Scale out with: docker compose up --scale worker=3
   worker:
     build:
       context: .
@@ -24,4 +48,18 @@ services:
     image: convertapi-worker
     environment:
       DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__convertapi: Host=postgres;Database=convertapi;Username=convertapi;Password='${POSTGRES_PASSWORD:-convertapi-dev}'
+      Storage__Root: /files
+    volumes:
+      - files:/files
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_started
     restart: unless-stopped
+
+volumes:
+  postgres-data:
+  # Uploads and results, shared by the API and the workers.
+  files:

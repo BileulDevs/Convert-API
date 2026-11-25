@@ -23,22 +23,51 @@ public sealed partial class LocalFileStorage : IFileStorage
         var path = ResolvePath(key);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
+        // Write next to the target, then rename in one step: readers never see a partial
+        // file, and a failed save only removes its own temporary file. Keys contain no dot,
+        // so a temporary name can never be a key.
+        var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
         try
         {
-            await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, useAsync: true);
-            return await CopyWithLimitAsync(content, file, maxBytes, cancellationToken);
+            long size;
+            await using (var file = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, useAsync: true))
+            {
+                size = await CopyWithLimitAsync(content, file, maxBytes, cancellationToken);
+            }
+
+            File.Move(temporaryPath, path, overwrite: true);
+            return size;
         }
         catch
         {
             // Too large, canceled, or the client dropped mid-upload: never keep a partial file.
-            File.Delete(path);
+            File.Delete(temporaryPath);
             throw;
         }
     }
 
+    public Task<Stream> OpenReadAsync(string key, CancellationToken cancellationToken)
+    {
+        var path = ResolvePath(key);
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Nothing is stored under '{key}'.");
+        }
+
+        Stream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, BufferSize, useAsync: true);
+        return Task.FromResult(stream);
+    }
+
     public Task DeleteAsync(string key, CancellationToken cancellationToken)
     {
-        File.Delete(ResolvePath(key));
+        var path = ResolvePath(key);
+
+        // File.Delete ignores a missing file but throws for a missing folder.
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+
         return Task.CompletedTask;
     }
 

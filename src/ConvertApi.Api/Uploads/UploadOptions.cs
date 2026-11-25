@@ -10,10 +10,6 @@ public sealed class UploadOptions
 
     private const long Megabyte = 1024 * 1024;
 
-    /// <summary>Directory of the local file storage.</summary>
-    [Required]
-    public string StorageRoot { get; set; } = Path.Combine(Path.GetTempPath(), "convertapi");
-
     [Range(1, long.MaxValue)]
     public long MaxAudioBytes { get; set; } = 200 * Megabyte;
 

@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConvertApi.Core\ConvertApi.Core.csproj" />
+    <ProjectReference Include="..\..\src\ConvertApi.Worker\ConvertApi.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

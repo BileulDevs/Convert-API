@@ -39,6 +39,20 @@ public sealed class ConversionJobTests
     }
 
     [Fact]
+    public void TimesAreStoredInUtc_WhateverOffsetTheCallerUses()
+    {
+        var paris = T0.ToOffset(TimeSpan.FromHours(1));
+
+        var job = ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", paris);
+        job.Start(paris);
+
+        Assert.Equal(TimeSpan.Zero, job.CreatedAt.Offset);
+        Assert.Equal(TimeSpan.Zero, job.StartedAt!.Value.Offset);
+        Assert.Equal(TimeSpan.Zero, job.Transitions[0].At.Offset);
+        Assert.Equal(T0, job.CreatedAt);
+    }
+
+    [Fact]
     public void Create_UsesAVersion7IdStampedWithTheCreationTime()
     {
         var job = NewJob();

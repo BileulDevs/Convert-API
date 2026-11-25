@@ -1,10 +1,13 @@
 using ConvertApi.Api.Auth;
 using ConvertApi.Api.Jobs;
+using ConvertApi.Data;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddConvertApiData();
+builder.AddConvertApiStorage();
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi(options => options.AddDocumentTransformer<ApiKeySecuritySchemeTransformer>());
 builder.Services.AddApiKeyAuthentication();

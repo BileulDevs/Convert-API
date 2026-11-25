@@ -76,21 +76,21 @@ public sealed class ConversionJob
 
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceFileKey);
 
+        var utcNow = now.ToUniversalTime();
         return new ConversionJob(
-            Guid.CreateVersion7(now),
+            Guid.CreateVersion7(utcNow),
             ownerId,
             sourceFileKey,
             NormalizeFormat(sourceFormat, nameof(sourceFormat)),
             NormalizeFormat(targetFormat, nameof(targetFormat)),
-            now);
+            utcNow);
     }
 
     /// <summary>A worker begins (or, after a crash, resumes) the conversion.</summary>
     public void Start(DateTimeOffset now)
     {
-        MoveTo(JobStatus.Processing, now);
+        StartedAt = MoveTo(JobStatus.Processing, now);
         Attempts++;
-        StartedAt = now;
     }
 
     /// <summary>The result is stored and will be kept for <paramref name="retention"/>.</summary>
@@ -98,24 +98,22 @@ public sealed class ConversionJob
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(retention, TimeSpan.Zero);
 
-        MoveTo(JobStatus.Succeeded, now);
-        CompletedAt = now;
-        ExpiresAt = now + retention;
+        var utcNow = MoveTo(JobStatus.Succeeded, now);
+        CompletedAt = utcNow;
+        ExpiresAt = utcNow + retention;
     }
 
     public void Fail(string reason, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
 
-        MoveTo(JobStatus.Failed, now);
-        CompletedAt = now;
+        CompletedAt = MoveTo(JobStatus.Failed, now);
         FailureReason = reason;
     }
 
     public void Cancel(DateTimeOffset now)
     {
-        MoveTo(JobStatus.Canceled, now);
-        CompletedAt = now;
+        CompletedAt = MoveTo(JobStatus.Canceled, now);
     }
 
     /// <summary>
@@ -126,15 +124,18 @@ public sealed class ConversionJob
         MoveTo(JobStatus.Expired, now);
     }
 
-    private void MoveTo(JobStatus target, DateTimeOffset now)
+    /// <returns>The time of the move, in UTC: every stored time is UTC.</returns>
+    private DateTimeOffset MoveTo(JobStatus target, DateTimeOffset now)
     {
         if (!JobStateMachine.CanTransition(Status, target))
         {
             throw new InvalidJobTransitionException(Id, Status, target);
         }
 
-        _transitions.Add(new JobTransition(Status, target, now));
+        var utcNow = now.ToUniversalTime();
+        _transitions.Add(new JobTransition(Status, target, utcNow));
         Status = target;
+        return utcNow;
     }
 
     private static string NormalizeFormat(string format, string paramName)

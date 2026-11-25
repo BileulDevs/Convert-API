@@ -152,7 +152,7 @@ internal sealed class JobUploadReader(IFileStorage storage, IOptions<UploadOptio
             EnsureConvertible(format, targetFormat);
         }
 
-        var key = $"uploads/{Guid.CreateVersion7():N}";
+        var key = StorageKeys.NewUpload();
         var content = new PrefixedReadStream(header.AsMemory(0, headerLength), body);
         await using (content.ConfigureAwait(false))
         {
