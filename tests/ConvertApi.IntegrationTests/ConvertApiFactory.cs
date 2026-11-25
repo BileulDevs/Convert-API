@@ -2,6 +2,8 @@ using System.Globalization;
 using ConvertApi.Core.ApiKeys;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ConvertApi.IntegrationTests;
 
@@ -17,6 +19,12 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
 
     /// <summary>Adds a configuration value; call it before the first request or <see cref="WebApplicationFactory{T}.Services"/>.</summary>
     public void ConfigureSetting(string key, string value) => _extraSettings[key] = value;
+
+    /// <summary>Replaces services for one test class; set it before the first request.</summary>
+    public Action<IServiceCollection>? TestServices { get; set; }
+
+    /// <summary>The webhook signing secret declared for the test key at <paramref name="index"/> (client A is 1).</summary>
+    public static string WebhookSecretOf(int index) => $"test-webhook-secret-{index}-0123456789abcdefghij";
 
     public const long ImageLimitBytes = 1024;
     public const string ApiKeyHeader = "X-Api-Key";
@@ -64,6 +72,11 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
         {
             builder.UseSetting(key, value);
         }
+
+        if (TestServices is not null)
+        {
+            builder.ConfigureTestServices(TestServices);
+        }
     }
 
     protected override void Dispose(bool disposing)
@@ -84,5 +97,6 @@ public sealed class ConvertApiFactory : WebApplicationFactory<Program>, IAsyncLi
         builder.UseSetting(prefix + "Name", $"Test client {index}");
         builder.UseSetting(prefix + "SecretHash", key.SecretHash);
         builder.UseSetting(prefix + "Revoked", revoked ? "true" : "false");
+        builder.UseSetting(prefix + "WebhookSecret", WebhookSecretOf(index));
     }
 }

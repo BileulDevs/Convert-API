@@ -1,6 +1,7 @@
 using ConvertApi.Api.Auth;
 using ConvertApi.Api.Jobs;
 using ConvertApi.Api.RateLimiting;
+using ConvertApi.Api.Webhooks;
 using ConvertApi.Data;
 using Scalar.AspNetCore;
 
@@ -14,6 +15,7 @@ builder.Services.AddOpenApi(options => options.AddDocumentTransformer<ApiKeySecu
 builder.Services.AddApiKeyAuthentication();
 builder.Services.AddConversionJobs();
 builder.Services.AddApiKeyRateLimiting();
+builder.Services.AddWebhooks();
 
 var app = builder.Build();
 

@@ -65,6 +65,15 @@ public sealed class ConversionJob
     /// <summary>Where the job's owner wants to be notified when it ends; always passes <see cref="CallbackUrl"/>'s checks.</summary>
     public Uri? CallbackUrl { get; private set; }
 
+    /// <summary>
+    /// When the callback should next be called: set when a job with a callback ends, pushed back
+    /// while a delivery is in flight or waiting for a retry, cleared once delivered or given up.
+    /// </summary>
+    public DateTimeOffset? NotificationDueAt { get; private set; }
+
+    /// <summary>How many times delivering the callback was attempted.</summary>
+    public int NotificationAttempts { get; private set; }
+
     public IReadOnlyList<JobTransition> Transitions => _transitions.AsReadOnly();
 
     public bool IsTerminal => JobStateMachine.IsTerminal(Status);
@@ -116,6 +125,7 @@ public sealed class ConversionJob
         var utcNow = MoveTo(JobStatus.Succeeded, now);
         CompletedAt = utcNow;
         ExpiresAt = utcNow + retention;
+        ScheduleNotification(utcNow);
     }
 
     public void Fail(string reason, DateTimeOffset now)
@@ -124,11 +134,38 @@ public sealed class ConversionJob
 
         CompletedAt = MoveTo(JobStatus.Failed, now);
         FailureReason = reason;
+        ScheduleNotification(CompletedAt.Value);
     }
 
     public void Cancel(DateTimeOffset now)
     {
         CompletedAt = MoveTo(JobStatus.Canceled, now);
+        ScheduleNotification(CompletedAt.Value);
+    }
+
+    /// <summary>A sender takes the due notification; it comes back at <paramref name="leaseUntil"/> if the sender dies.</summary>
+    public void ClaimNotification(DateTimeOffset leaseUntil)
+    {
+        if (NotificationDueAt is null)
+        {
+            throw new InvalidOperationException($"Job {Id} has no notification to send.");
+        }
+
+        NotificationAttempts++;
+        NotificationDueAt = leaseUntil.ToUniversalTime();
+    }
+
+    public void RetryNotification(DateTimeOffset at) => NotificationDueAt = at.ToUniversalTime();
+
+    /// <summary>The callback was delivered, or delivering it was given up.</summary>
+    public void CompleteNotification() => NotificationDueAt = null;
+
+    private void ScheduleNotification(DateTimeOffset utcNow)
+    {
+        if (CallbackUrl is not null)
+        {
+            NotificationDueAt = utcNow;
+        }
     }
 
     /// <summary>

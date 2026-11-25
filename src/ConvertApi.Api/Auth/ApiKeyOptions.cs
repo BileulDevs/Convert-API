@@ -30,4 +30,12 @@ public sealed class ConfiguredApiKey
     public string SecretHash { get; set; } = "";
 
     public bool Revoked { get; set; }
+
+    /// <summary>
+    /// Signs this key's webhooks; shared with its owner only, so one client cannot forge another's.
+    /// Unlike the key, it is kept in clear: signing needs it. Supply it from a secret store, never a committed file.
+    /// </summary>
+    [Required]
+    [MinLength(32)]
+    public string WebhookSecret { get; set; } = "";
 }

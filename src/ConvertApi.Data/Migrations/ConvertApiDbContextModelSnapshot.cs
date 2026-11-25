@@ -48,6 +48,12 @@ namespace ConvertApi.Data.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<int>("NotificationAttempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("NotificationDueAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("OwnerId")
                         .HasColumnType("uuid");
 
@@ -105,6 +111,9 @@ namespace ConvertApi.Data.Migrations
                     b.HasIndex("Id")
                         .HasDatabaseName("IX_Jobs_Active")
                         .HasFilter("\"Status\" IN ('Queued', 'Processing')");
+
+                    b.HasIndex("NotificationDueAt")
+                        .HasFilter("\"NotificationDueAt\" IS NOT NULL");
 
                     b.HasIndex("OwnerId", "Id");
 

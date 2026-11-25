@@ -50,6 +50,9 @@ internal sealed class ConversionJobConfiguration : IEntityTypeConfiguration<Conv
             .HasDatabaseName("IX_Jobs_Active")
             .HasFilter($"\"Status\" IN ('{nameof(JobStatus.Queued)}', '{nameof(JobStatus.Processing)}')");
 
+        // Webhook senders only look at jobs with a callback still to deliver.
+        job.HasIndex(j => j.NotificationDueAt).HasFilter("\"NotificationDueAt\" IS NOT NULL");
+
         // The expiry sweep only looks at results that are still kept.
         job.HasIndex(j => j.ExpiresAt).HasFilter($"\"Status\" = '{nameof(JobStatus.Succeeded)}'");
     }

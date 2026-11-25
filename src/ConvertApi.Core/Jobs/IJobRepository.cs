@@ -19,6 +19,13 @@ public interface IJobRepository
     /// <summary>Succeeded jobs whose result expired at or before <paramref name="now"/>, soonest expiry first.</summary>
     Task<IReadOnlyList<ConversionJob>> ListExpiredAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Claims up to <paramref name="limit"/> jobs whose callback is due, each for one sender: concurrent
+    /// senders never get the same job. A claimed job comes back once <paramref name="lease"/> runs out.
+    /// </summary>
+    Task<IReadOnlyList<ConversionJob>> ClaimDueNotificationsAsync(
+        DateTimeOffset now, TimeSpan lease, int limit, CancellationToken cancellationToken);
+
     /// <summary>Saves a job loaded through this repository; fails if someone else changed it in the meantime.</summary>
     Task SaveAsync(ConversionJob job, CancellationToken cancellationToken);
 }

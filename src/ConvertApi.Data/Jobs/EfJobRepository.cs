@@ -45,6 +45,42 @@ internal sealed class EfJobRepository(ConvertApiDbContext db) : IJobRepository
             .ToListAsync(cancellationToken);
     }
 
+    public Task<IReadOnlyList<ConversionJob>> ClaimDueNotificationsAsync(
+        DateTimeOffset now, TimeSpan lease, int limit, CancellationToken cancellationToken)
+    {
+        // A transaction under a retrying strategy must run as one retriable unit.
+        var strategy = db.Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(
+            token => ClaimNotificationsInTransactionAsync(now.ToUniversalTime(), lease, limit, token), cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<ConversionJob>> ClaimNotificationsInTransactionAsync(
+        DateTimeOffset now, TimeSpan lease, int limit, CancellationToken cancellationToken)
+    {
+        db.ChangeTracker.Clear();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // The rows stay locked until the commit, after their lease is saved: SKIP LOCKED keeps
+        // another sender from picking them meanwhile, the lease keeps it away afterwards.
+        var ids = await db.Database.SqlQuery<Guid>($"""
+            SELECT "Id" AS "Value" FROM "Jobs"
+            WHERE "NotificationDueAt" <= {now}
+            ORDER BY "NotificationDueAt"
+            LIMIT {limit}
+            FOR UPDATE SKIP LOCKED
+            """).ToListAsync(cancellationToken);
+
+        var jobs = await db.Jobs.Where(job => ids.Contains(job.Id)).ToListAsync(cancellationToken);
+        foreach (var job in jobs)
+        {
+            job.ClaimNotification(now + lease);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return jobs;
+    }
+
     public async Task SaveAsync(ConversionJob job, CancellationToken cancellationToken)
     {
         if (db.Entry(job).State == EntityState.Detached)
@@ -52,7 +88,16 @@ internal sealed class EfJobRepository(ConvertApiDbContext db) : IJobRepository
             throw new InvalidOperationException("Only a job loaded through this repository can be saved.");
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Stop tracking the stale copy, so the next save in this scope does not trip on it again.
+            db.Entry(job).State = EntityState.Detached;
+            throw;
+        }
     }
 
     private static bool IsDuplicateKey(DbUpdateException exception) =>

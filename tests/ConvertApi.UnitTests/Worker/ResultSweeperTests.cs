@@ -150,6 +150,10 @@ public sealed class ResultSweeperTests : IDisposable
         public Task<int> CountActiveAsync(Guid ownerId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<IReadOnlyList<ConversionJob>> ClaimDueNotificationsAsync(
+            DateTimeOffset now, TimeSpan lease, int limit, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<IReadOnlyList<ConversionJob>> ListExpiredAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ConversionJob>>(
                 [.. All.Where(j => j.Status == JobStatus.Succeeded && j.ExpiresAt <= now).OrderBy(j => j.ExpiresAt).Take(limit)]);
