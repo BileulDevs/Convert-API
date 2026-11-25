@@ -19,4 +19,7 @@ public interface IJobDispatcher
     /// count as an attempt. Does nothing if the job is no longer running.
     /// </summary>
     Task ReleaseAsync(Guid jobId, DateTimeOffset now, CancellationToken cancellationToken);
+
+    /// <summary>Whether the job's owner canceled it; read fresh from the store, never from a cached copy.</summary>
+    Task<bool> IsCanceledAsync(Guid jobId, CancellationToken cancellationToken);
 }

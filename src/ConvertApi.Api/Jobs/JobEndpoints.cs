@@ -1,20 +1,35 @@
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using ConvertApi.Api.Auth;
+using ConvertApi.Api.RateLimiting;
 using ConvertApi.Api.Uploads;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ConvertApi.Api.Jobs;
 
 public static class JobEndpoints
 {
+    /// <summary>When a quota slot frees up depends on the conversions; this is a reasonable time to look again.</summary>
+    private const string QuotaRetryAfterSeconds = "30";
+
+    /// <summary>How often an events stream looks for a status change.</summary>
+    private static readonly TimeSpan EventsPollInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest an events stream stays open, so a stalled job cannot hold a connection forever.</summary>
+    private static readonly TimeSpan EventsMaxDuration = TimeSpan.FromMinutes(10);
+
     public static IEndpointRouteBuilder MapJobEndpoints(this IEndpointRouteBuilder app)
     {
         var jobs = app.MapGroup("/v1/jobs")
             .WithTags("Jobs")
             .RequireAuthorization()
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .RequireRateLimiting(ApiKeyRateLimiting.PolicyName)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         jobs.MapPost("/", CreateJobAsync)
             .WithName("CreateJob")
@@ -36,7 +51,139 @@ public static class JobEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
 
+        jobs.MapGet("/{id:guid}/events", StreamJobEventsAsync)
+            .WithName("GetJobEvents")
+            .WithSummary("Follow the job's status as Server-Sent Events, until it succeeds or ends")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        jobs.MapDelete("/{id:guid}", DeleteJobAsync)
+            .WithName("DeleteJob")
+            .WithSummary("Cancel a job that has not finished, or delete its result")
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
         return app;
+    }
+
+    private static async Task<Results<ServerSentEventsResult<JobResponse>, ProblemHttpResult>> StreamJobEventsAsync(
+        Guid id, ClaimsPrincipal user, IJobRepository jobs, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var job = await jobs.ReadLatestAsync(id, user.GetApiKeyId(), cancellationToken);
+        return job is null
+            ? TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Job not found")
+            : TypedResults.ServerSentEvents(StatusChangesAsync(job, jobs, clock, cancellationToken), eventType: "status");
+    }
+
+    /// <summary>
+    /// The job now, then once per status change. Ends when the job succeeds (the result is ready) or
+    /// reaches a final status, or when the client disconnects.
+    /// </summary>
+    /// <remarks>
+    /// A stream also ends after <see cref="EventsMaxDuration"/>: the client reconnects and gets the current state first.
+    /// shortcut: each open stream polls the database every second, and a key may open many; switch to
+    /// LISTEN/NOTIFY and cap streams per key if they get numerous.
+    /// </remarks>
+    private static async IAsyncEnumerable<JobResponse> StatusChangesAsync(
+        ConversionJob job,
+        IJobRepository jobs,
+        TimeProvider clock,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var current = job;
+        var deadline = clock.GetUtcNow() + EventsMaxDuration;
+        while (true)
+        {
+            yield return JobResponse.From(current);
+            if (current.Status == JobStatus.Succeeded || current.IsTerminal)
+            {
+                yield break;
+            }
+
+            // Only the status is compared: no other field changes while it stays the same.
+            ConversionJob? latest;
+            do
+            {
+                if (clock.GetUtcNow() >= deadline)
+                {
+                    yield break;
+                }
+
+                await Task.Delay(EventsPollInterval, clock, cancellationToken);
+                latest = await jobs.ReadLatestAsync(current.Id, current.OwnerId, cancellationToken);
+            }
+            while (latest is not null && latest.Status == current.Status);
+
+            if (latest is null)
+            {
+                yield break;
+            }
+
+            current = latest;
+        }
+    }
+
+    /// <summary>
+    /// A queued or running job is canceled (its worker notices and stops); a succeeded job has its
+    /// result deleted and expires. A finished job is left as it is, so a repeated call still answers 204.
+    /// </summary>
+    private static async Task<Results<NoContent, ProblemHttpResult>> DeleteJobAsync(
+        Guid id,
+        ClaimsPrincipal user,
+        IJobRepository jobs,
+        IFileStorage storage,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var job = await jobs.FindAsync(id, user.GetApiKeyId(), cancellationToken);
+        if (job is null)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Job not found");
+        }
+
+        if (job.IsTerminal)
+        {
+            return TypedResults.NoContent();
+        }
+
+        var resultKey = StorageKeys.ResultOf(job.Id);
+        if (job.Status == JobStatus.Succeeded)
+        {
+            // File first: the sweep only looks at succeeded jobs, so an expired job must not keep a file.
+            await storage.DeleteAsync(resultKey, cancellationToken);
+            job.Expire(clock.GetUtcNow());
+            return await TrySaveAsync(job, jobs, cancellationToken);
+        }
+
+        // Cancel first: a worker must not see its source vanish and fail the job before the cancel lands.
+        job.Cancel(clock.GetUtcNow());
+        var saved = await TrySaveAsync(job, jobs, cancellationToken);
+        if (saved.Result is NoContent)
+        {
+            // A running worker may still write a result after this; it deletes it once it sees the cancel.
+            // shortcut: a failure here leaves the upload behind for good; add an orphan sweep if it shows up in logs.
+            await storage.DeleteAsync(job.SourceFileKey, cancellationToken);
+            await storage.DeleteAsync(resultKey, cancellationToken);
+        }
+
+        return saved;
+    }
+
+    private static async Task<Results<NoContent, ProblemHttpResult>> TrySaveAsync(
+        ConversionJob job, IJobRepository jobs, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await jobs.SaveAsync(job, cancellationToken);
+            return TypedResults.NoContent();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // A worker claimed or finished the job in the meantime: its new state decides what a retry does.
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status409Conflict,
+                title: "Job changed",
+                detail: "The job changed while it was being deleted; send the request again.");
+        }
     }
 
     private static async Task<Results<FileStreamHttpResult, ProblemHttpResult>> DownloadResultAsync(
@@ -104,13 +251,28 @@ public static class JobEndpoints
 
     private static async Task<Results<Accepted<JobResponse>, ProblemHttpResult>> CreateJobAsync(
         HttpRequest request,
+        HttpResponse response,
         ClaimsPrincipal user,
         JobUploadReader uploads,
         IJobRepository jobs,
         IFileStorage storage,
+        IOptions<RateLimitOptions> limits,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
+        // Checked before reading the upload, so a refused request costs no disk or bandwidth.
+        // shortcut: two uploads racing past the check can exceed the quota by one each; lock per key if that matters.
+        var maxActiveJobs = limits.Value.MaxActiveJobs;
+        if (await jobs.CountActiveAsync(user.GetApiKeyId(), cancellationToken) >= maxActiveJobs)
+        {
+            response.Headers.RetryAfter = QuotaRetryAfterSeconds;
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Too many active jobs",
+                detail: $"This API key already has {maxActiveJobs} jobs queued or running; wait for one to finish.",
+                type: "https://tools.ietf.org/html/rfc6585#section-4");
+        }
+
         JobUpload upload;
         try
         {
@@ -122,7 +284,7 @@ public static class JobEndpoints
         }
 
         var job = ConversionJob.Create(
-            user.GetApiKeyId(), upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow());
+            user.GetApiKeyId(), upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow(), upload.CallbackUrl);
         try
         {
             await jobs.AddAsync(job, cancellationToken);
@@ -148,5 +310,6 @@ public static class JobEndpoints
     }
 
     /// <summary>Documents the multipart body for OpenAPI; the endpoint reads the stream itself.</summary>
-    internal sealed record CreateJobForm(IFormFile File, string TargetFormat);
+    /// <param name="CallbackUrl">Optional HTTPS URL of a public host, notified when the job ends.</param>
+    internal sealed record CreateJobForm(IFormFile File, string TargetFormat, Uri? CallbackUrl);
 }

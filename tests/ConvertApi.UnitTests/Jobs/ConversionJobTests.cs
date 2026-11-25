@@ -11,6 +11,9 @@ public sealed class ConversionJobTests
 
     private static ConversionJob NewJob() => ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0);
 
+    private static ConversionJob JobWithCallback() =>
+        ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0, new Uri("https://example.com/hook"));
+
     private static ConversionJob SucceededJob()
     {
         var job = NewJob();
@@ -36,6 +39,86 @@ public sealed class ConversionJobTests
         Assert.Null(job.ExpiresAt);
         Assert.Null(job.FailureReason);
         Assert.Empty(job.Transitions);
+        Assert.Null(job.CallbackUrl);
+    }
+
+    [Fact]
+    public void Create_KeepsASafeCallbackUrl()
+    {
+        var callback = new Uri("https://example.com/hook");
+
+        var job = ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0, callback);
+
+        Assert.Equal(callback, job.CallbackUrl);
+    }
+
+    [Fact]
+    public void AFinishedJobWithACallback_IsDueForNotification()
+    {
+        var succeeded = JobWithCallback();
+        succeeded.Start(T0);
+        succeeded.Succeed(Retention, T0.AddSeconds(5));
+        var failed = JobWithCallback();
+        failed.Fail("Corrupt file.", T0.AddSeconds(6));
+        var canceled = JobWithCallback();
+        canceled.Cancel(T0.AddSeconds(7));
+
+        Assert.Equal(T0.AddSeconds(5), succeeded.NotificationDueAt);
+        Assert.Equal(T0.AddSeconds(6), failed.NotificationDueAt);
+        Assert.Equal(T0.AddSeconds(7), canceled.NotificationDueAt);
+        Assert.Equal(0, succeeded.NotificationAttempts);
+    }
+
+    [Fact]
+    public void AFinishedJobWithoutACallback_IsNeverDue()
+    {
+        var job = NewJob();
+        job.Fail("Corrupt file.", T0);
+
+        Assert.Null(job.NotificationDueAt);
+    }
+
+    [Fact]
+    public void ClaimingANotification_CountsTheAttemptAndHoldsItUntilTheLeaseEnds()
+    {
+        var job = JobWithCallback();
+        job.Fail("Corrupt file.", T0);
+
+        job.ClaimNotification(T0.AddMinutes(1));
+
+        Assert.Equal(1, job.NotificationAttempts);
+        Assert.Equal(T0.AddMinutes(1), job.NotificationDueAt);
+    }
+
+    [Fact]
+    public void ANotification_CanBeRetriedLater_OrCompleted()
+    {
+        var job = JobWithCallback();
+        job.Fail("Corrupt file.", T0);
+        job.ClaimNotification(T0.AddMinutes(1));
+
+        job.RetryNotification(T0.AddMinutes(5));
+        Assert.Equal(T0.AddMinutes(5), job.NotificationDueAt);
+
+        job.ClaimNotification(T0.AddMinutes(6));
+        job.CompleteNotification();
+        Assert.Null(job.NotificationDueAt);
+        Assert.Equal(2, job.NotificationAttempts);
+    }
+
+    [Fact]
+    public void ClaimingANotificationThatIsNotDue_Throws()
+    {
+        var job = JobWithCallback();
+
+        Assert.Throws<InvalidOperationException>(() => job.ClaimNotification(T0));
+    }
+
+    [Fact]
+    public void Create_RefusesAnUnsafeCallbackUrl()
+    {
+        Assert.Throws<ArgumentException>(
+            () => ConversionJob.Create(Owner, SourceKey, "mp4", "mp3", T0, new Uri("https://10.0.0.1/hook")));
     }
 
     [Fact]

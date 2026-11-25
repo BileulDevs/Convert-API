@@ -15,6 +15,25 @@ public sealed class FfmpegConverterTests : IDisposable
 {
     private static readonly string Ffmpeg = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
 
+    [Fact]
+    public void Ffmpeg_DoesNotInheritTheWorkersSecrets()
+    {
+        const string Secret = "ConnectionStrings__convertapi_test";
+        Environment.SetEnvironmentVariable(Secret, "Password=hunter2");
+        try
+        {
+            var startInfo = new FfmpegConverter(Ffmpeg).CreateStartInfo(
+                new ConversionRequest(Output("in.wav"), Output("mp3"), "wav", "mp3"));
+
+            Assert.False(startInfo.Environment.ContainsKey(Secret));
+            Assert.Contains(startInfo.Environment.Keys, key => key.Equals("PATH", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(Secret, null);
+        }
+    }
+
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "convertapi-tests", Guid.NewGuid().ToString("N"));
     private readonly FfmpegConverter _converter = new(Ffmpeg);
 

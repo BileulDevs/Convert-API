@@ -1,5 +1,6 @@
 using ConvertApi.Core.Formats;
 using ConvertApi.Core.Storage;
+using ConvertApi.Core.Webhooks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Core.Features;
@@ -10,7 +11,7 @@ using Microsoft.Net.Http.Headers;
 namespace ConvertApi.Api.Uploads;
 
 /// <summary>A file the client sent, stored and checked, ready to become a job.</summary>
-public sealed record JobUpload(string SourceFileKey, string SourceFormat, string TargetFormat);
+public sealed record JobUpload(string SourceFileKey, string SourceFormat, string TargetFormat, Uri? CallbackUrl);
 
 /// <summary>
 /// Reads a multipart job request part by part. The file is streamed straight to storage
@@ -21,6 +22,7 @@ internal sealed class JobUploadReader(IFileStorage storage, IOptions<UploadOptio
 {
     private const string FilePart = "file";
     private const string TargetFormatPart = "targetFormat";
+    private const string CallbackUrlPart = "callbackUrl";
     private const int MaxParts = 8;
     private const int MaxFieldLength = 64;
     private const long MultipartOverheadBytes = 1024 * 1024;
@@ -39,6 +41,7 @@ internal sealed class JobUploadReader(IFileStorage storage, IOptions<UploadOptio
 
         StoredSource? source = null;
         string? targetFormat = null;
+        Uri? callbackUrl = null;
         try
         {
             var parts = 0;
@@ -60,15 +63,19 @@ internal sealed class JobUploadReader(IFileStorage storage, IOptions<UploadOptio
                             : throw UploadRejectedException.BadRequest("Send a single file per job.");
                         break;
                     case TargetFormatPart when disposition.IsFormDisposition():
-                        targetFormat = await ReadFieldAsync(section.Body, cancellationToken);
+                        targetFormat = await ReadFieldAsync(section.Body, MaxFieldLength, cancellationToken);
+                        break;
+                    case CallbackUrlPart when disposition.IsFormDisposition():
+                        callbackUrl = ParseCallbackUrl(
+                            await ReadFieldAsync(section.Body, CallbackUrl.MaxLength, cancellationToken));
                         break;
                     default:
                         throw UploadRejectedException.BadRequest(
-                            $"Only a '{FilePart}' file part and a '{TargetFormatPart}' field are accepted.");
+                            $"Only a '{FilePart}' file part and '{TargetFormatPart}' and '{CallbackUrlPart}' fields are accepted.");
                 }
             }
 
-            return Validate(source, targetFormat);
+            return Validate(source, targetFormat) with { CallbackUrl = callbackUrl };
         }
         catch (Exception exception)
         {
@@ -172,13 +179,13 @@ internal sealed class JobUploadReader(IFileStorage storage, IOptions<UploadOptio
         return new StoredSource(key, format);
     }
 
-    private static async Task<string> ReadFieldAsync(Stream body, CancellationToken cancellationToken)
+    private static async Task<string> ReadFieldAsync(Stream body, int maxLength, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(body);
-        var buffer = new char[MaxFieldLength + 1];
+        var buffer = new char[maxLength + 1];
         var length = await reader.ReadBlockAsync(buffer, cancellationToken);
-        return length > MaxFieldLength
-            ? throw UploadRejectedException.BadRequest($"Form fields are limited to {MaxFieldLength} characters.")
+        return length > maxLength
+            ? throw UploadRejectedException.BadRequest($"This form field is limited to {maxLength} characters.")
             : new string(buffer, 0, length);
     }
 
@@ -194,8 +201,13 @@ internal sealed class JobUploadReader(IFileStorage storage, IOptions<UploadOptio
             throw UploadRejectedException.BadRequest($"A '{TargetFormatPart}' field is required.");
         }
 
-        return new JobUpload(source.Key, source.Format, EnsureConvertible(source.Format, targetFormat));
+        return new JobUpload(source.Key, source.Format, EnsureConvertible(source.Format, targetFormat), CallbackUrl: null);
     }
+
+    private static Uri ParseCallbackUrl(string value) =>
+        CallbackUrl.TryParse(value.Trim(), out var url, out var error)
+            ? url
+            : throw UploadRejectedException.BadRequest(error);
 
     /// <returns>The normalized target format.</returns>
     private static string EnsureConvertible(string sourceFormat, string targetFormat)

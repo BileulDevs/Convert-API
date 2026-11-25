@@ -26,17 +26,24 @@ public sealed class FfmpegConverter(
     private const int MaxErrorLength = 4_000;
     private static readonly TimeSpan DefaultMaxMediaDuration = TimeSpan.FromHours(2);
 
+    /// <summary>The only variables FFmpeg gets: none holds a secret. SystemRoot lets it start on Windows.</summary>
+    private static readonly HashSet<string> InheritedVariables =
+        new(["PATH", "TMPDIR", "TEMP", "TMP", "SystemRoot"], StringComparer.OrdinalIgnoreCase);
+
     private readonly FfmpegLimits _limits = new(threads, maxMediaDuration ?? DefaultMaxMediaDuration, maxOutputBytes);
 
     public bool CanConvert(string sourceFormat, string targetFormat) =>
         FormatCatalog.SourceFamilyOf(sourceFormat) is FormatFamily.Audio or FormatFamily.Video
         && FormatCatalog.IsSupported(sourceFormat, targetFormat);
 
-    public async Task ConvertAsync(ConversionRequest request, CancellationToken cancellationToken)
+    /// <summary>
+    /// How FFmpeg is started for <paramref name="request"/>: arguments as a list (never a shell
+    /// string) and an environment stripped to the system basics. FFmpeg reads untrusted files, so
+    /// it must not inherit the worker's secrets, such as the database connection string.
+    /// </summary>
+    public ProcessStartInfo CreateStartInfo(ConversionRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        EnsureAbsolute(request.InputPath);
-        EnsureAbsolute(request.OutputPath);
 
         var startInfo = new ProcessStartInfo(ffmpegPath)
         {
@@ -50,6 +57,23 @@ public sealed class FfmpegConverter(
             startInfo.ArgumentList.Add(argument);
         }
 
+        var kept = startInfo.Environment.Where(variable => InheritedVariables.Contains(variable.Key)).ToList();
+        startInfo.Environment.Clear();
+        foreach (var (name, value) in kept)
+        {
+            startInfo.Environment[name] = value;
+        }
+
+        return startInfo;
+    }
+
+    public async Task ConvertAsync(ConversionRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        EnsureAbsolute(request.InputPath);
+        EnsureAbsolute(request.OutputPath);
+
+        var startInfo = CreateStartInfo(request);
         try
         {
             var errors = await RunAsync(startInfo, cancellationToken);

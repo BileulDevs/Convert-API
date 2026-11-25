@@ -18,3 +18,9 @@ GET {{ConvertApi_HostAddress}}/openapi/v1.json
 # Replace the id with the one returned by POST /v1/jobs.
 GET {{ConvertApi_HostAddress}}/v1/jobs/00000000-0000-0000-0000-000000000000
 X-Api-Key: {{ApiKey}}
+
+###
+
+# Cancels the job, or deletes its result once it succeeded.
+DELETE {{ConvertApi_HostAddress}}/v1/jobs/00000000-0000-0000-0000-000000000000
+X-Api-Key: {{ApiKey}}

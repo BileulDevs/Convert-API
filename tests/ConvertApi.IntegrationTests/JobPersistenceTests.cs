@@ -97,6 +97,17 @@ public sealed class JobPersistenceTests(ConvertApiFactory factory) : IClassFixtu
     }
 
     [Fact]
+    public async Task ACallbackUrl_RoundTrips()
+    {
+        var job = ConversionJob.Create(Guid.NewGuid(), $"uploads/{Guid.NewGuid():N}", "png", "jpg", T0, new Uri("https://example.com/hook?a=1"));
+        await SaveAsync(job);
+
+        var loaded = await LoadAsync(job.Id);
+
+        Assert.Equal(new Uri("https://example.com/hook?a=1"), loaded?.CallbackUrl);
+    }
+
+    [Fact]
     public async Task TheRepository_OnlyFindsAJobForItsOwner()
     {
         var job = NewJob();

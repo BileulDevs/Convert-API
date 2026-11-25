@@ -1,5 +1,7 @@
 using ConvertApi.Api.Auth;
 using ConvertApi.Api.Jobs;
+using ConvertApi.Api.RateLimiting;
+using ConvertApi.Api.Webhooks;
 using ConvertApi.Data;
 using Scalar.AspNetCore;
 
@@ -12,6 +14,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi(options => options.AddDocumentTransformer<ApiKeySecuritySchemeTransformer>());
 builder.Services.AddApiKeyAuthentication();
 builder.Services.AddConversionJobs();
+builder.Services.AddApiKeyRateLimiting();
+builder.Services.AddWebhooks();
 
 var app = builder.Build();
 
@@ -19,6 +23,9 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// After authorization: requests without a valid key get a 401 and use up no one's limit.
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {

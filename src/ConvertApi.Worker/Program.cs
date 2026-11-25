@@ -26,10 +26,13 @@ builder.Services.AddSingleton<IFileConverter>(provider =>
     return new FfmpegConverter(options.FfmpegPath, options.FfmpegThreads, options.MaxMediaDuration, options.MaxResultBytes);
 });
 builder.Services.AddHostedService<ConversionWorker>();
+builder.Services.AddScoped<ResultSweeper>();
+builder.Services.AddHostedService<ResultSweepWorker>();
 
 var host = builder.Build();
 
 var conversion = host.Services.GetRequiredService<IOptions<ConversionOptions>>().Value;
+WorkDirectory.RemoveStale(conversion.WorkRoot, conversion.MaxDuration * 2, DateTimeOffset.UtcNow);
 ImageConverter.ApplyResourceLimits(conversion.MaxDuration, Path.Combine(conversion.WorkRoot, "imagemagick"));
 
 host.Run();
