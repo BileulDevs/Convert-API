@@ -84,11 +84,12 @@ public static class Extensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
+        // Probes come from the host, which has no API key.
         app.MapHealthChecks(LivePath, new HealthCheckOptions
         {
             Predicate = check => check.Tags.Contains(LiveTag),
-        });
-        app.MapHealthChecks(ReadyPath);
+        }).AllowAnonymous();
+        app.MapHealthChecks(ReadyPath).AllowAnonymous();
 
         return app;
     }
