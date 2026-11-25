@@ -21,6 +21,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks: [db, jobs]
     restart: unless-stopped
 
   api:
@@ -39,9 +40,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # db for the database, default for the published port and outgoing webhooks.
+    networks: [db, default]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
 
   # Scale out with: docker compose up --scale worker=3
+  # The worker hands untrusted files to FFmpeg and ImageMagick, so it gets as little as possible:
+  # no internet and no API (jobs is internal and holds only PostgreSQL), no Linux capabilities,
+  # a read-only system, and bounded CPU, memory and processes.
+  # Known limit: it shares the files volume and the database credentials with the API, so a
+  # compromised worker could still alter other jobs' files; a per-job sandbox would close that.
   worker:
     build:
       context: .
@@ -51,14 +61,40 @@ services:
       DOTNET_ENVIRONMENT: Development
       ConnectionStrings__convertapi: Host=postgres;Database=convertapi;Username=convertapi;Password='${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}'
       Storage__Root: /files
+      Conversion__WorkRoot: /work
     volumes:
       - files:/files
+      # Scratch space for conversions, private to each worker container and dropped with it.
+      - /work
+    tmpfs:
+      - /tmp:size=64m
+    read_only: true
+    # Reaps the FFmpeg processes of a conversion stopped mid-way.
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+          pids: 256
+    # No swap on top of the memory limit.
+    memswap_limit: 2g
+    networks: [jobs]
     depends_on:
       postgres:
         condition: service_healthy
       api:
         condition: service_started
     restart: unless-stopped
+
+# Both internal (no internet). The API and the workers each reach PostgreSQL, never each other.
+networks:
+  db:
+    internal: true
+  jobs:
+    internal: true
 
 volumes:
   postgres-data:
