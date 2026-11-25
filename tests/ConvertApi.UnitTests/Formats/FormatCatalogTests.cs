@@ -44,6 +44,20 @@ public sealed class FormatCatalogTests
     }
 
     [Fact]
+    public void AcceptedSources_ListEveryAudioVideoAndImageFormat_ButNoDocumentYet()
+    {
+        var accepted = FormatCatalog.AcceptedSources;
+
+        Assert.Contains("png", accepted);
+        Assert.Contains("mp4", accepted);
+        Assert.Contains("flac", accepted);
+        Assert.DoesNotContain("docx", accepted);
+        Assert.DoesNotContain("md", accepted);
+        Assert.All(accepted, source => Assert.NotEqual(FormatFamily.Document, FormatCatalog.SourceFamilyOf(source)));
+        Assert.Equal(accepted.Order(StringComparer.Ordinal), accepted);
+    }
+
+    [Fact]
     public void SourceFamilyOf_ReturnsNullForAnUnknownFormat()
     {
         Assert.Null(FormatCatalog.SourceFamilyOf("pdf"));

@@ -1,4 +1,5 @@
 using ConvertApi.Api.Auth;
+using ConvertApi.Api.Formats;
 using ConvertApi.Api.Jobs;
 using ConvertApi.Api.RateLimiting;
 using ConvertApi.Api.Webhooks;
@@ -35,5 +36,6 @@ if (app.Environment.IsDevelopment())
 
 app.MapDefaultEndpoints();
 app.MapJobEndpoints();
+app.MapFormatEndpoints();
 
 app.Run();
