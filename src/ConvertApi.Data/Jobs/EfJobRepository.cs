@@ -24,6 +24,9 @@ internal sealed class EfJobRepository(ConvertApiDbContext db) : IJobRepository
     public Task<ConversionJob?> FindAsync(Guid id, Guid ownerId, CancellationToken cancellationToken) =>
         db.Jobs.FirstOrDefaultAsync(job => job.Id == id && job.OwnerId == ownerId, cancellationToken);
 
+    public Task<ConversionJob?> ReadLatestAsync(Guid id, Guid ownerId, CancellationToken cancellationToken) =>
+        db.Jobs.AsNoTracking().FirstOrDefaultAsync(job => job.Id == id && job.OwnerId == ownerId, cancellationToken);
+
     public Task<int> CountActiveAsync(Guid ownerId, CancellationToken cancellationToken) =>
         db.Jobs.CountAsync(
             job => job.OwnerId == ownerId && (job.Status == JobStatus.Queued || job.Status == JobStatus.Processing),

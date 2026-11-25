@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using ConvertApi.Api.Auth;
 using ConvertApi.Api.RateLimiting;
@@ -14,6 +15,12 @@ public static class JobEndpoints
 {
     /// <summary>When a quota slot frees up depends on the conversions; this is a reasonable time to look again.</summary>
     private const string QuotaRetryAfterSeconds = "30";
+
+    /// <summary>How often an events stream looks for a status change.</summary>
+    private static readonly TimeSpan EventsPollInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>The longest an events stream stays open, so a stalled job cannot hold a connection forever.</summary>
+    private static readonly TimeSpan EventsMaxDuration = TimeSpan.FromMinutes(10);
 
     public static IEndpointRouteBuilder MapJobEndpoints(this IEndpointRouteBuilder app)
     {
@@ -44,6 +51,11 @@ public static class JobEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status410Gone);
 
+        jobs.MapGet("/{id:guid}/events", StreamJobEventsAsync)
+            .WithName("GetJobEvents")
+            .WithSummary("Follow the job's status as Server-Sent Events, until it succeeds or ends")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         jobs.MapDelete("/{id:guid}", DeleteJobAsync)
             .WithName("DeleteJob")
             .WithSummary("Cancel a job that has not finished, or delete its result")
@@ -51,6 +63,63 @@ public static class JobEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict);
 
         return app;
+    }
+
+    private static async Task<Results<ServerSentEventsResult<JobResponse>, ProblemHttpResult>> StreamJobEventsAsync(
+        Guid id, ClaimsPrincipal user, IJobRepository jobs, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var job = await jobs.ReadLatestAsync(id, user.GetApiKeyId(), cancellationToken);
+        return job is null
+            ? TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Job not found")
+            : TypedResults.ServerSentEvents(StatusChangesAsync(job, jobs, clock, cancellationToken), eventType: "status");
+    }
+
+    /// <summary>
+    /// The job now, then once per status change. Ends when the job succeeds (the result is ready) or
+    /// reaches a final status, or when the client disconnects.
+    /// </summary>
+    /// <remarks>
+    /// A stream also ends after <see cref="EventsMaxDuration"/>: the client reconnects and gets the current state first.
+    /// shortcut: each open stream polls the database every second, and a key may open many; switch to
+    /// LISTEN/NOTIFY and cap streams per key if they get numerous.
+    /// </remarks>
+    private static async IAsyncEnumerable<JobResponse> StatusChangesAsync(
+        ConversionJob job,
+        IJobRepository jobs,
+        TimeProvider clock,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var current = job;
+        var deadline = clock.GetUtcNow() + EventsMaxDuration;
+        while (true)
+        {
+            yield return JobResponse.From(current);
+            if (current.Status == JobStatus.Succeeded || current.IsTerminal)
+            {
+                yield break;
+            }
+
+            // Only the status is compared: no other field changes while it stays the same.
+            ConversionJob? latest;
+            do
+            {
+                if (clock.GetUtcNow() >= deadline)
+                {
+                    yield break;
+                }
+
+                await Task.Delay(EventsPollInterval, clock, cancellationToken);
+                latest = await jobs.ReadLatestAsync(current.Id, current.OwnerId, cancellationToken);
+            }
+            while (latest is not null && latest.Status == current.Status);
+
+            if (latest is null)
+            {
+                yield break;
+            }
+
+            current = latest;
+        }
     }
 
     /// <summary>

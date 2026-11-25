@@ -7,6 +7,12 @@ public interface IJobRepository
     /// <summary>Returns the job only when it belongs to <paramref name="ownerId"/>, so other keys get a 404.</summary>
     Task<ConversionJob?> FindAsync(Guid id, Guid ownerId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Like <see cref="FindAsync"/>, but reads the job as stored right now on every call, so repeated
+    /// calls see other processes' changes. The copy is not tracked: it cannot be saved.
+    /// </summary>
+    Task<ConversionJob?> ReadLatestAsync(Guid id, Guid ownerId, CancellationToken cancellationToken);
+
     /// <summary>How many of the owner's jobs are still queued or running.</summary>
     Task<int> CountActiveAsync(Guid ownerId, CancellationToken cancellationToken);
 

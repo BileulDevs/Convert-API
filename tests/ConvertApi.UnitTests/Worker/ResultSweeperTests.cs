@@ -144,6 +144,9 @@ public sealed class ResultSweeperTests : IDisposable
         public Task<ConversionJob?> FindAsync(Guid id, Guid ownerId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<ConversionJob?> ReadLatestAsync(Guid id, Guid ownerId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<int> CountActiveAsync(Guid ownerId, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
