@@ -35,7 +35,7 @@ FROM scratch AS ffmpeg-binaries
 COPY --from=ffmpeg /ffmpeg /ffprobe /
 
 # ServiceDefaults references ASP.NET Core (health checks), so the worker needs the aspnet runtime too.
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 
 # FFmpeg converts audio and video. It runs as a separate process, so its GPL build does not
 # extend to this code (see THIRD-PARTY-NOTICES.md). ImageMagick ships inside the Magick.NET package.
