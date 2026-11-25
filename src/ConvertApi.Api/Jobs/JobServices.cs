@@ -14,6 +14,7 @@ public static class JobServices
 
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<JobUploadReader>();
+        services.AddSingleton<JobTelemetry>();
 
         services.ConfigureHttpJsonOptions(json => json.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 

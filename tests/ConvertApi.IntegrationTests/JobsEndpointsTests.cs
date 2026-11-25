@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using ConvertApi.Core.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ConvertApi.IntegrationTests;
 
@@ -66,6 +68,23 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
         var problem = await AssertProblemAsync(response, HttpStatusCode.BadRequest);
         Assert.Contains("callbackUrl", problem.GetProperty("detail").GetString(), StringComparison.Ordinal);
         Assert.Equal(storedBefore, factory.StoredFiles().Length);
+    }
+
+    [Fact]
+    public async Task PostJob_KeepsTheRequestsTraceOnTheJob_SoTheWorkerCanContinueIt()
+    {
+        using var client = factory.CreateClientWithKey();
+        using var request = new HttpRequestMessage(HttpMethod.Post, JobsUri) { Content = Form(Png(size: 50), "photo.png", "jpg") };
+        request.Headers.Add("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+
+        using var response = await client.SendAsync(request, Ct);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var id = (await ReadJobAsync(response)).GetProperty("id").GetGuid();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var job = await scope.ServiceProvider.GetRequiredService<IJobRepository>().FindAsync(id, factory.ClientAOwnerId, Ct);
+        Assert.NotNull(job?.TraceParent);
+        Assert.Contains("4bf92f3577b34da6a3ce929d0e0e4736", job.TraceParent, StringComparison.Ordinal);
     }
 
     [Fact]

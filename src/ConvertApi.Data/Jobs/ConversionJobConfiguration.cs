@@ -26,6 +26,7 @@ internal sealed class ConversionJobConfiguration : IEntityTypeConfiguration<Conv
         job.Property(j => j.Status).HasConversion<string>().HasMaxLength(StatusLength);
         job.Property(j => j.FailureReason).HasMaxLength(2000);
         job.Property(j => j.CallbackUrl).HasMaxLength(Core.Webhooks.CallbackUrl.MaxLength);
+        job.Property(j => j.TraceParent).HasMaxLength(ConversionJob.MaxTraceParentLength);
         job.Ignore(j => j.IsTerminal);
 
         // EF needs an IList: map the private list behind the read-only Transitions property.

@@ -257,6 +257,7 @@ public static class JobEndpoints
         IJobRepository jobs,
         IFileStorage storage,
         IOptions<RateLimitOptions> limits,
+        JobTelemetry telemetry,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -284,7 +285,13 @@ public static class JobEndpoints
         }
 
         var job = ConversionJob.Create(
-            user.GetApiKeyId(), upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow(), upload.CallbackUrl);
+            user.GetApiKeyId(),
+            upload.SourceFileKey,
+            upload.SourceFormat,
+            upload.TargetFormat,
+            clock.GetUtcNow(),
+            upload.CallbackUrl,
+            JobTelemetry.CurrentTraceParent());
         try
         {
             await jobs.AddAsync(job, cancellationToken);
@@ -296,6 +303,7 @@ public static class JobEndpoints
             throw;
         }
 
+        telemetry.JobCreated(job);
         return TypedResults.Accepted($"/v1/jobs/{job.Id}", JobResponse.From(job));
     }
 

@@ -1,8 +1,11 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using ConvertApi.Core.Conversion;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
 using ConvertApi.Worker;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -18,16 +21,24 @@ public sealed class JobProcessorTests : IDisposable
     private readonly RecordingDispatcher _dispatcher = new();
     private readonly ConversionOptions _options;
 
+    // A meter factory of this test's own: parallel tests record into other factories' meters.
+    private readonly ServiceProvider _meterServices = new ServiceCollection().AddMetrics().BuildServiceProvider();
+    private readonly IMeterFactory _meters;
+    private readonly ConversionTelemetry _telemetry;
+
     public JobProcessorTests()
     {
         _storage = new LocalFileStorage(Path.Combine(_root, "storage"));
         _options = new ConversionOptions { WorkRoot = Path.Combine(_root, "work"), ResultRetention = TimeSpan.FromHours(24) };
+        _meters = _meterServices.GetRequiredService<IMeterFactory>();
+        _telemetry = new ConversionTelemetry(_meters);
     }
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public void Dispose()
     {
+        _meterServices.Dispose();
         if (Directory.Exists(_root))
         {
             Directory.Delete(_root, recursive: true);
@@ -224,15 +235,85 @@ public sealed class JobProcessorTests : IDisposable
         Assert.True(await ExistsAsync(StorageKeys.ResultOf(job.Id)));
     }
 
-    private JobProcessor ProcessorWith(params IFileConverter[] converters) =>
-        new(_storage, _dispatcher, converters, Options.Create(_options), new FixedClock(T0), NullLogger<JobProcessor>.Instance);
+    [Fact]
+    public async Task AFinishedConversion_IsCountedAndTimed_ByFamilyAndOutcome()
+    {
+        var job = await ClaimedJobAsync();
+        using var measurements = new RecordedMeasurements(_meters);
 
-    private async Task<ConversionJob> ClaimedJobAsync()
+        await ProcessorWith(new FakeConverter(output: [1])).ProcessAsync(job, Ct);
+
+        var completed = Assert.Single(measurements.Of("convertapi.jobs.completed"));
+        Assert.Equal(1, completed.Value);
+        Assert.Equal("Succeeded", completed.Tags["convertapi.job.status"]);
+        Assert.Equal("Image", completed.Tags["convertapi.format.family"]);
+        var duration = Assert.Single(measurements.Of("convertapi.conversion.duration"));
+        Assert.True(duration.Value >= 0);
+        Assert.Equal("Succeeded", duration.Tags["convertapi.job.status"]);
+    }
+
+    [Fact]
+    public async Task TheConversionTrace_ContinuesTheTraceOfTheRequestThatCreatedTheJob()
+    {
+        const string RequestTrace = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+        var job = await ClaimedJobAsync(RequestTrace);
+        Activity? conversion = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == ConversionTelemetry.SourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (Equals(activity.GetTagItem("convertapi.job.id"), job.Id.ToString()))
+                {
+                    conversion = activity;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await ProcessorWith(new FakeConverter(output: [1])).ProcessAsync(job, Ct);
+
+        Assert.NotNull(conversion);
+        Assert.Equal("0af7651916cd43dd8448eb211c80319c", conversion.TraceId.ToHexString());
+        Assert.Equal("b7ad6b7169203331", conversion.ParentSpanId.ToHexString());
+    }
+
+    [Fact]
+    public async Task AnAttemptThatThrows_EndsItsSpanInError()
+    {
+        var job = await ClaimedJobAsync();
+        Activity? conversion = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == ConversionTelemetry.SourceName,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                if (Equals(activity.GetTagItem("convertapi.job.id"), job.Id.ToString()))
+                {
+                    conversion = activity;
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        await Assert.ThrowsAsync<IOException>(
+            () => ProcessorWith(new FakeConverter(failure: new IOException("Disk full."))).ProcessAsync(job, Ct));
+
+        Assert.NotNull(conversion);
+        Assert.Equal(ActivityStatusCode.Error, conversion.Status);
+    }
+
+    private JobProcessor ProcessorWith(params IFileConverter[] converters) =>
+        new(_storage, _dispatcher, converters, Options.Create(_options), new FixedClock(T0), _telemetry, NullLogger<JobProcessor>.Instance);
+
+    private async Task<ConversionJob> ClaimedJobAsync(string? traceParent = null)
     {
         var key = StorageKeys.NewUpload();
         using var content = new MemoryStream(Source);
         await _storage.SaveAsync(key, content, maxBytes: 100, Ct);
-        var job = ConversionJob.Create(Guid.NewGuid(), key, "png", "jpg", T0);
+        var job = ConversionJob.Create(Guid.NewGuid(), key, "png", "jpg", T0, traceParent: traceParent);
         job.Start(T0);
         return job;
     }
@@ -289,6 +370,8 @@ public sealed class JobProcessorTests : IDisposable
 
         /// <summary>How many <see cref="IsCanceledAsync"/> calls fail first, as when the database blips.</summary>
         public int FailingCancelChecks { get; set; }
+
+        public Task<int> CountQueuedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<bool> IsCanceledAsync(Guid jobId, CancellationToken cancellationToken) =>
             FailingCancelChecks-- > 0

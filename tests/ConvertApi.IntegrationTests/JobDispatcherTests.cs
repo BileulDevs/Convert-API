@@ -151,6 +151,18 @@ public sealed class JobDispatcherTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CountQueued_CountsOnlyJobsWaitingForAWorker()
+    {
+        await AddJobAsync(T0);
+        await AddJobAsync(T0.AddSeconds(1));
+        await AddJobAsync(T0.AddSeconds(2));
+        await ClaimAsync(T0.AddMinutes(1));
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        Assert.Equal(2, await scope.ServiceProvider.GetRequiredService<IJobDispatcher>().CountQueuedAsync(Ct));
+    }
+
+    [Fact]
     public async Task Save_PersistsTheWorkersChanges()
     {
         await AddJobAsync(T0);

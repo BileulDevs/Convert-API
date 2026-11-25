@@ -22,4 +22,7 @@ public interface IJobDispatcher
 
     /// <summary>Whether the job's owner canceled it; read fresh from the store, never from a cached copy.</summary>
     Task<bool> IsCanceledAsync(Guid jobId, CancellationToken cancellationToken);
+
+    /// <summary>How many jobs wait for a worker: the queue length.</summary>
+    Task<int> CountQueuedAsync(CancellationToken cancellationToken);
 }
