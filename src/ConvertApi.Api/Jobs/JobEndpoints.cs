@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using ConvertApi.Api.Auth;
+using ConvertApi.Api.RateLimiting;
 using ConvertApi.Api.Uploads;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
@@ -15,7 +16,9 @@ public static class JobEndpoints
         var jobs = app.MapGroup("/v1/jobs")
             .WithTags("Jobs")
             .RequireAuthorization()
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .RequireRateLimiting(ApiKeyRateLimiting.PolicyName)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         jobs.MapPost("/", CreateJobAsync)
             .WithName("CreateJob")
