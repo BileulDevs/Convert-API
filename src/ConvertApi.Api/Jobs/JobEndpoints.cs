@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using ConvertApi.Api.Auth;
 using ConvertApi.Api.Uploads;
 using ConvertApi.Core.Jobs;
 using ConvertApi.Core.Storage;
@@ -7,12 +9,12 @@ namespace ConvertApi.Api.Jobs;
 
 public static class JobEndpoints
 {
-    // Every job belongs to this owner until API key authentication supplies the real one.
-    private static readonly Guid PlaceholderOwner = Guid.Parse("0193a5f0-0000-7000-8000-000000000001");
-
     public static IEndpointRouteBuilder MapJobEndpoints(this IEndpointRouteBuilder app)
     {
-        var jobs = app.MapGroup("/v1/jobs").WithTags("Jobs");
+        var jobs = app.MapGroup("/v1/jobs")
+            .WithTags("Jobs")
+            .RequireAuthorization()
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         jobs.MapPost("/", CreateJobAsync)
             .WithName("CreateJob")
@@ -32,6 +34,7 @@ public static class JobEndpoints
 
     private static async Task<Results<Accepted<JobResponse>, ProblemHttpResult>> CreateJobAsync(
         HttpRequest request,
+        ClaimsPrincipal user,
         JobUploadReader uploads,
         IJobRepository jobs,
         IFileStorage storage,
@@ -49,7 +52,7 @@ public static class JobEndpoints
         }
 
         var job = ConversionJob.Create(
-            PlaceholderOwner, upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow());
+            user.GetApiKeyId(), upload.SourceFileKey, upload.SourceFormat, upload.TargetFormat, clock.GetUtcNow());
         try
         {
             await jobs.AddAsync(job, cancellationToken);
@@ -65,9 +68,10 @@ public static class JobEndpoints
     }
 
     private static async Task<Results<Ok<JobResponse>, ProblemHttpResult>> GetJobAsync(
-        Guid id, IJobRepository jobs, CancellationToken cancellationToken)
+        Guid id, ClaimsPrincipal user, IJobRepository jobs, CancellationToken cancellationToken)
     {
-        var job = await jobs.FindAsync(id, PlaceholderOwner, cancellationToken);
+        // A job of another key answers 404, not 403: its existence is not revealed.
+        var job = await jobs.FindAsync(id, user.GetApiKeyId(), cancellationToken);
         return job is null
             ? TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, title: "Job not found")
             : TypedResults.Ok(JobResponse.From(job));

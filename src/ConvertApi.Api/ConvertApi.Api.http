@@ -1,5 +1,8 @@
 @ConvertApi_HostAddress = http://localhost:5080
 
+# Public development key, accepted only when the API runs in the Development environment.
+@ApiKey = cvt_devlocal_DevelopmentOnlyKeyDoNotUseInProd
+
 GET {{ConvertApi_HostAddress}}/health/live
 
 ###
@@ -9,3 +12,9 @@ GET {{ConvertApi_HostAddress}}/health/ready
 ###
 
 GET {{ConvertApi_HostAddress}}/openapi/v1.json
+
+###
+
+# Replace the id with the one returned by POST /v1/jobs.
+GET {{ConvertApi_HostAddress}}/v1/jobs/00000000-0000-0000-0000-000000000000
+X-Api-Key: {{ApiKey}}

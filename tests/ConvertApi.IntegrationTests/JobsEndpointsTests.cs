@@ -15,7 +15,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithAPng_Returns202AndStoresTheFile()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var png = Png(size: 200);
         var storedBefore = factory.StoredFiles().Length;
 
@@ -35,7 +35,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task GetJob_ReturnsTheJobAtItsTrackingUrl()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         using var created = await client.PostAsync(JobsUri, Form(Png(size: 50), "photo.png", ".JPG"), Ct);
 
         using var response = await client.GetAsync(created.Headers.Location, Ct);
@@ -49,7 +49,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_TrustsTheContent_NotTheFileNameOrContentType()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
 
         using var response = await client.PostAsync(JobsUri, Form(Png(size: 50), "song.mp3", "webp", "audio/mpeg"), Ct);
 
@@ -60,7 +60,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithUnrecognizedContent_Returns415AndKeepsNothing()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
 
         using var response = await client.PostAsync(JobsUri, Form(Encoding.UTF8.GetBytes("not an image"), "photo.png", "jpg"), Ct);
@@ -75,7 +75,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [InlineData("../x")]
     public async Task PostJob_WithAnUnsupportedConversion_Returns422AndKeepsNothing(string target)
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
 
         using var response = await client.PostAsync(JobsUri, Form(Png(size: 50), "photo.png", target), Ct);
@@ -88,7 +88,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_OverTheFamilyLimit_Returns413AndKeepsNothing()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
 
         using var response = await client.PostAsync(JobsUri, Form(Png(size: (int)ConvertApiFactory.ImageLimitBytes + 1), "big.png", "jpg"), Ct);
@@ -100,7 +100,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithoutTargetFormat_Returns400AndKeepsNothing()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
 
         using var response = await client.PostAsync(JobsUri, Form(Png(size: 50), "photo.png", targetFormat: null), Ct);
@@ -112,7 +112,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithoutAFile_Returns400()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         using var form = new MultipartFormDataContent { { new StringContent("jpg"), "targetFormat" } };
 
         using var response = await client.PostAsync(JobsUri, form, Ct);
@@ -123,7 +123,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithTwoFiles_Returns400AndKeepsNothing()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
         using var form = Form(Png(size: 50), "a.png", "jpg");
         form.Add(new ByteArrayContent(Png(size: 50)), "file", "b.png");
@@ -137,7 +137,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithATooLongTargetFormat_Returns400()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
 
         using var response = await client.PostAsync(JobsUri, Form(Png(size: 50), "photo.png", new string('a', 200)), Ct);
 
@@ -147,7 +147,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithTheTargetAfterTheFile_StillValidatesTheConversion()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
         using var form = new MultipartFormDataContent
         {
@@ -164,7 +164,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithAnUnknownPart_Returns400AndKeepsNothing()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         var storedBefore = factory.StoredFiles().Length;
         using var form = Form(Png(size: 50), "photo.png", "jpg");
         form.Add(new StringContent("surprise"), "unexpected");
@@ -178,7 +178,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithTooManyParts_Returns400()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         using var form = new MultipartFormDataContent();
         for (var i = 0; i < 20; i++)
         {
@@ -193,7 +193,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithAMalformedMultipartBody_Returns400()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         using var body = new StringContent("--abc\r\nnot a header line\r\n\r\ntruncated");
         body.Headers.ContentType = MediaTypeHeaderValue.Parse("multipart/form-data; boundary=abc");
 
@@ -205,7 +205,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_DeclaringABodyLargerThanAnyLimit_Returns413()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
         using var form = Form(Png(size: 50), "photo.png", "jpg");
         using var request = new HttpRequestMessage(HttpMethod.Post, JobsUri) { Content = form };
         await form.LoadIntoBufferAsync(Ct);
@@ -219,7 +219,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task PostJob_WithoutMultipart_Returns415()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
 
         using var response = await client.PostAsJsonAsync(JobsUri, new { targetFormat = "jpg" }, Ct);
 
@@ -229,7 +229,7 @@ public sealed class JobsEndpointsTests(ConvertApiFactory factory) : IClassFixtur
     [Fact]
     public async Task GetJob_ForAnUnknownId_Returns404()
     {
-        using var client = factory.CreateClient();
+        using var client = factory.CreateClientWithKey();
 
         using var response = await client.GetAsync(new Uri($"/v1/jobs/{Guid.NewGuid()}", UriKind.Relative), Ct);
 
