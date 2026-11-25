@@ -3,7 +3,7 @@
 # Needs BuildKit (the default builder), which sets TARGETARCH.
 # The document engines (LibreOffice, Pandoc) will be added to the final stage.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 # Restore and publish for the image's architecture only: Magick.NET otherwise ships its native
 # library for every platform (Windows, macOS, ARM, musl), some 200 MB the container never loads.
 ARG TARGETARCH
