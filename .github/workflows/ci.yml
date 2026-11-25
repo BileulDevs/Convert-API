@@ -19,8 +19,6 @@ concurrency:
 env:
   DOTNET_NOLOGO: "true"
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
-  # The FFmpeg the worker image ships, so tests convert with the very same build.
-  FFMPEG_IMAGE: mwader/static-ffmpeg:9.1@sha256:dd09509d8c2152bfa601c8c20e3dd166bde906d37951b9f7e8bbd922267f5ac9
 
 jobs:
   build:
@@ -36,14 +34,13 @@ jobs:
         with:
           global-json-file: global.json
 
-      # ffprobe sits next to ffmpeg: some tests use it to check the converted files.
+      # The FFmpeg the worker image ships, taken from its Dockerfile (the one place its version is
+      # pinned), so tests convert with the very same build. ffprobe comes along: tests use it.
       - name: Get FFmpeg
         run: |
-          mkdir -p "$RUNNER_TEMP/ffmpeg"
-          docker create --name ffmpeg "$FFMPEG_IMAGE" >/dev/null
-          docker cp ffmpeg:/ffmpeg "$RUNNER_TEMP/ffmpeg/ffmpeg"
-          docker cp ffmpeg:/ffprobe "$RUNNER_TEMP/ffmpeg/ffprobe"
-          docker rm ffmpeg >/dev/null
+          docker buildx build --target ffmpeg-binaries --output "type=local,dest=$RUNNER_TEMP/ffmpeg" \
+            -f src/ConvertApi.Worker/Dockerfile .
+          chmod +x "$RUNNER_TEMP/ffmpeg/ffmpeg" "$RUNNER_TEMP/ffmpeg/ffprobe"
           # Fail here rather than let the FFmpeg tests skip themselves for want of a binary.
           "$RUNNER_TEMP/ffmpeg/ffmpeg" -hide_banner -version
           echo "FFMPEG_PATH=$RUNNER_TEMP/ffmpeg/ffmpeg" >> "$GITHUB_ENV"
