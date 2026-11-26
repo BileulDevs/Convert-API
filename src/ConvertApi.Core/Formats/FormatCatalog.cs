@@ -42,6 +42,14 @@ public static class FormatCatalog
         [FormatFamily.Document] = ["html", "md", "pdf"],
     }.ToFrozenDictionary();
 
+    /// <summary>
+    /// The input formats uploads are accepted in today, sorted: every format the catalog lists
+    /// except documents, which have no detection or engine yet.
+    /// </summary>
+    /// <remarks>shortcut: documents join once their detection and conversion engines exist (phase 5).</remarks>
+    public static IReadOnlyList<string> AcceptedSources { get; } =
+        [.. SourceFamilies.Where(entry => entry.Value != FormatFamily.Document).Select(entry => entry.Key).Order(StringComparer.Ordinal)];
+
     /// <summary>The family of an input format, or null when the service does not accept it.</summary>
     public static FormatFamily? SourceFamilyOf(string source) =>
         SourceFamilies.TryGetValue(source, out var family) ? family : null;
