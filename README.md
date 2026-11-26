@@ -185,7 +185,7 @@ GitHub Actions, in [`.github/workflows`](.github/workflows):
   `latest`;
 - optionally, deployment to Azure (see below).
 
-Dependabot proposes weekly updates against `dev`.
+Dependencies are updated by hand, including the pinned FFmpeg image in the worker's Dockerfile.
 
 ## Deploy
 
